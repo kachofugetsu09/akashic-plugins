@@ -1,0 +1,488 @@
+{
+ "groups": {
+  "advanced": {
+   "description": "设计画布、可视化、稳定视图",
+   "members": [
+    "design",
+    "stable_view",
+    "visuals"
+   ],
+   "required": false,
+   "title": "开发者"
+  },
+  "channels": {
+   "description": "Telegram 收发",
+   "members": [
+    "telegram_channel",
+    "telegram_sender"
+   ],
+   "required": false,
+   "title": "通道"
+  },
+  "chat": {
+   "description": "自动命名会话、侧栏主对话入口、项目分组、线性图标扩展、隐私打码、对话截图",
+   "members": [
+    "kubai_icons",
+    "main_session",
+    "privacy_mask",
+    "projects",
+    "screenshot",
+    "session_title"
+   ],
+   "required": false,
+   "title": "对话体验"
+  },
+  "delegate": {
+   "description": "把任务委派给子智能体、Codex 或 Claude Code",
+   "members": [
+    "subagent",
+    "subagent_claude_code",
+    "subagent_codex"
+   ],
+   "required": false,
+   "title": "子任务"
+  },
+  "goal": {
+   "description": "为长任务设定目标并持续推进",
+   "members": [
+    "goal"
+   ],
+   "required": false,
+   "title": "目标"
+  },
+  "memory": {
+   "description": "Markdown 记忆与 Akasha 语义记忆",
+   "members": [
+    "akasha",
+    "markdown_memory"
+   ],
+   "required": false,
+   "title": "记忆"
+  },
+  "mobile": {
+   "description": "后台虚拟屏操控手机、事件订阅与看屏唤起",
+   "members": [
+    "phone-assist",
+    "phone-use"
+   ],
+   "required": false,
+   "title": "手机端侧"
+  },
+  "models": {
+   "description": "Codex、Gemini、OpenCode Go 的模型连接",
+   "members": [
+    "codex",
+    "gemini",
+    "opencode-go"
+   ],
+   "required": false,
+   "title": "更多模型来源"
+  },
+  "schedule": {
+   "description": "定时任务、提醒、主动推送",
+   "members": [
+    "message_push",
+    "scheduler",
+    "timer"
+   ],
+   "required": false,
+   "title": "定时与提醒"
+  },
+  "senses": {
+   "description": "读取图片、使用浏览器",
+   "members": [
+    "computer",
+    "vision"
+   ],
+   "required": false,
+   "title": "看图与浏览器"
+  },
+  "watch": {
+   "description": "主动关注并在需要时提醒你（默认关闭，找不到低价或免费 token 时不建议开启）",
+   "members": [
+    "userinformation",
+    "watch"
+   ],
+   "required": false,
+   "title": "值班"
+  },
+  "web": {
+   "description": "让它能搜索和读取网页",
+   "members": [
+    "standard_web",
+    "web_fetch_http",
+    "web_search_exa",
+    "web_search_searxng"
+   ],
+   "required": false,
+   "title": "联网"
+  },
+  "workbench": {
+   "description": "改动摘要、Markdown 阅读、终端",
+   "members": [
+    "file_viewer",
+    "terminal",
+    "workspace_changes"
+   ],
+   "required": false,
+   "title": "工作台"
+  }
+ },
+ "packages": {
+  "akasha": {
+   "desc": "从消息学习并提供普通 Context 材料与记忆工具",
+   "group": "memory",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 19805235
+  },
+  "codex": {
+   "desc": "ChatGPT login, Codex catalog, and Responses transport",
+   "group": "models",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 84113
+  },
+  "computer": {
+   "desc": "The user's logged-in browser: tabs, anonymous contexts, and visual control",
+   "group": "senses",
+   "images": [
+    "ghcr.io/kachofugetsu09/akashic-computer@sha256:dd107c74c91d5778ebdc130f1c26828638f8c53e142c69771f4feb858b67f054"
+   ],
+   "needs": [
+    "docker"
+   ],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 176604
+  },
+  "design": {
+   "desc": "工作台里的设计画布（open-pencil）：用户和 Agent 在同一份设计文档上编辑",
+   "group": "advanced",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {
+    "cf779cd5486f3fc5a18bea4ac606026a1667ae16efaee15af51bd3ad3ae01092": 117394312
+   },
+   "size_bytes": 20878999
+  },
+  "file_viewer": {
+   "desc": "在右侧工作台浏览与阅读 PDF、Word、Excel、PPT、Markdown、代码与图片，支持划词/框选引用及 Agent 主动打开定位",
+   "group": "workbench",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 14194879
+  },
+  "gemini": {
+   "desc": "Gemini 原生 GenerateContent 驱动",
+   "group": "models",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 46335
+  },
+  "goal": {
+   "desc": "持久目标：/goal 设置后自动续跑，直到完成、阻塞或暂停",
+   "group": "goal",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 75223
+  },
+  "kubai_icons": {
+   "desc": "Kubai 线性动画图标库（26 个官方分类、1,285 枚线性动画图标，按需分块加载）",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 4407422
+  },
+  "main_session": {
+   "desc": "把一段对话固定在侧栏顶部，名字是 Akashic",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 19987
+  },
+  "markdown_memory": {
+   "desc": "把已使用摘要的确切原文提炼进 SELF.md、MEMORY.md 与 topics/ 主题",
+   "group": "memory",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 149551
+  },
+  "message_push": {
+   "desc": "推送消息，并在 supervisor runtime 提供安全重启",
+   "group": "schedule",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 29008
+  },
+  "opencode-go": {
+   "desc": "OpenCode Go Chat Completions models and local login import",
+   "group": "models",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 48850
+  },
+  "phone-assist": {
+   "desc": "手机端看屏唤起与半屏浮层对话：按住横条或默认助理唤起，自动折叠进「手机」项目",
+   "group": "mobile",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 66878
+  },
+  "phone-use": {
+   "desc": "连接并后台操作在线的 Android 手机端侧设备（无线调试虚拟屏、多适配器低功耗事件订阅与查询）",
+   "group": "mobile",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "userinformation",
+    "watch"
+   ],
+   "resources": {},
+   "size_bytes": 508090
+  },
+  "privacy_mask": {
+   "desc": "截屏隐私打码：一键将侧栏会话标题化为骨架条、对话内容高斯模糊",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 21109
+  },
+  "projects": {
+   "desc": "按项目组织对话，并为 Session 宽键提供 project 维度",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 46558
+  },
+  "scheduler": {
+   "desc": "持久调度：到点在创建任务的会话里执行，最终回复按原触发投递",
+   "group": "schedule",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "timer"
+   ],
+   "resources": {},
+   "size_bytes": 88183
+  },
+  "screenshot": {
+   "desc": "对话截图：把一段对话截成长图，可遮敏感信息或全部模糊，再分享、保存或复制",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 46759
+  },
+  "session_title": {
+   "desc": "首条用户消息自动生成短标题，保留用户改名",
+   "group": "chat",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 29665
+  },
+  "stable_view": {
+   "desc": "命令行查看当前 stable 插件组合树",
+   "group": "advanced",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 6642
+  },
+  "standard_web": {
+   "desc": "提供 Web 搜索与读取工具；端点由各提供方插件负责",
+   "group": "web",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 35762
+  },
+  "subagent": {
+   "desc": "独立内部消息任务，固定工具权限并向父会话回传",
+   "group": "delegate",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 318132
+  },
+  "subagent_claude_code": {
+   "desc": "委托 Claude Code；只开放工作目录内的 Read、Glob、Grep，不开放 shell、写入或 MCP 工具",
+   "group": "delegate",
+   "images": [],
+   "needs": [
+    "command:claude"
+   ],
+   "requires": [
+    "subagent"
+   ],
+   "resources": {},
+   "size_bytes": 6283
+  },
+  "subagent_codex": {
+   "desc": "委托原生 Codex；一次性只读任务，公开过程独立展示",
+   "group": "delegate",
+   "images": [],
+   "needs": [
+    "command:codex"
+   ],
+   "requires": [
+    "subagent"
+   ],
+   "resources": {},
+   "size_bytes": 10881
+  },
+  "telegram_channel": {
+   "desc": "Telegram inbound and outbound v3 channel adapter",
+   "group": "channels",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 65492
+  },
+  "telegram_sender": {
+   "desc": "用固定凭据发送 Telegram 正文和附件",
+   "group": "channels",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 42663
+  },
+  "terminal": {
+   "desc": "工作台里用户自己敲命令的终端；PTY 归执行主机，本插件只按会话命名",
+   "group": "workbench",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 598258
+  },
+  "timer": {
+   "desc": "单次截止时间等待，不拥有调度或来源语义",
+   "group": "schedule",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 4780
+  },
+  "userinformation": {
+   "desc": "统一用户信息入口：发现来源及查询 schema，读取睡眠、游戏、位置等证据；不自动注入状态",
+   "group": "watch",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 8809
+  },
+  "vision": {
+   "desc": "通过能看图的模型查看图片",
+   "group": "senses",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 29279
+  },
+  "visuals": {
+   "desc": "生成可交互的图表、解释和模拟，作为 HTML 消息附件保存",
+   "group": "advanced",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {
+    "cf779cd5486f3fc5a18bea4ac606026a1667ae16efaee15af51bd3ad3ae01092": 117394312
+   },
+   "size_bytes": 235608
+  },
+  "watch": {
+   "desc": "值班（默认关闭）：便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；找不到低价或免费 token 时不建议开启",
+   "group": "watch",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "main_session",
+    "userinformation"
+   ],
+   "resources": {},
+   "size_bytes": 195919
+  },
+  "web_fetch_http": {
+   "desc": "直接通过 HTTP(S) 读取网页正文；可配置大小上限、请求头与代理",
+   "group": "web",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "standard_web"
+   ],
+   "resources": {},
+   "size_bytes": 31477
+  },
+  "web_search_exa": {
+   "desc": "经 Exa 搜索互联网；可配置自建或代理端点与 API key",
+   "group": "web",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "standard_web"
+   ],
+   "resources": {},
+   "size_bytes": 32918
+  },
+  "web_search_searxng": {
+   "desc": "通过自建 SearXNG 搜索互联网；可配置服务地址",
+   "group": "web",
+   "images": [],
+   "needs": [],
+   "requires": [
+    "standard_web"
+   ],
+   "resources": {},
+   "size_bytes": 27291
+  },
+  "workspace_changes": {
+   "desc": "查看会话工作目录（git 仓库）的改动，回复下方给出每轮的摘要",
+   "group": "workbench",
+   "images": [],
+   "needs": [],
+   "requires": [],
+   "resources": {},
+   "size_bytes": 135696
+  }
+ },
+ "schema_version": 1
+}
