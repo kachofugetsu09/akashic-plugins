@@ -1,0 +1,2 @@
+# In-process dependencies. Exact pin: matches Core requirements.txt and the Chromium build installed for it.
+playwright==1.59.0
