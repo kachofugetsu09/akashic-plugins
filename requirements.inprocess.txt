@@ -1,0 +1,3 @@
+# In-process dependencies. Lower bound: Core requirements.txt; upper bound: next major.
+aiohttp>=3.14.3,<4
+telegramify-markdown>=1.2.0,<2
