@@ -1,0 +1,5 @@
+# In-process dependencies. jieba is pinned exactly (the term cache key includes its version) and comes from wheels/.
+jieba==0.42.1
+numba>=0.68.1,<1
+numpy>=2.4.0,<3
+threadpoolctl>=3.6.0,<4
