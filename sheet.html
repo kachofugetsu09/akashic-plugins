@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Akashic 看屏助手</title>
+<style>
+:root {
+  --bg-canvas: #f5f2eb;
+  --bg-surface: #f9f8f4;
+  --bg-low: #f1efe7;
+  --ink: #292622;
+  --ink-2: #504c48;
+  --ink-3: #6e6a64;
+  --border: #e2dfd5;
+  --border-strong: #9c9890;
+  --accent: #2d4a6a;
+  --on-accent: #fbfaf6;
+  --ok: #346841;
+  --err: #8d4039;
+  --ui: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg-canvas: #181714;
+    --bg-surface: #1e1d1a;
+    --bg-low: #252420;
+    --ink: #dcd9d2;
+    --ink-2: #bab7b0;
+    --ink-3: #8f8c85;
+    --border: #2e2c28;
+    --border-strong: #625f58;
+    --accent: #a4c1e0;
+    --on-accent: #102031;
+    --ok: #9ecba6;
+    --err: #efa9a1;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-canvas: #181714; --bg-surface: #1e1d1a; --bg-low: #252420;
+  --ink: #dcd9d2; --ink-2: #bab7b0; --ink-3: #8f8c85;
+  --border: #2e2c28; --border-strong: #625f58;
+  --accent: #a4c1e0; --on-accent: #102031; --ok: #9ecba6; --err: #efa9a1;
+}
+:root[data-theme="ochre-light"] {
+  --bg-canvas: #f7f0e5; --bg-surface: #faf6f0; --bg-low: #f4ece1;
+  --ink: #2f2722; --ink-2: #534b46; --ink-3: #665d58;
+  --border: #e6dcce; --border-strong: #8f857e;
+  --accent: #934d2c; --on-accent: #fdfaf4; --ok: #346841; --err: #8d4039;
+}
+:root[data-theme="ochre-dark"] {
+  --bg-canvas: #1c1714; --bg-surface: #221e1a; --bg-low: #27221f;
+  --ink: #ddd6ce; --ink-2: #bdb6ae; --ink-3: #9f9990;
+  --border: #2f2a25; --border-strong: #6d665f;
+  --accent: #dda27f; --on-accent: #341501; --ok: #9ecba6; --err: #efa9a1;
+}
+:root[data-theme="moss-light"] {
+  --bg-canvas: #f0f3ea; --bg-surface: #f7f8f3; --bg-low: #edf0e6;
+  --ink: #252b26; --ink-2: #494f4a; --ink-3: #5a615b;
+  --border: #dde0d4; --border-strong: #7e867f;
+  --accent: #265e4e; --on-accent: #f9fbf6; --ok: #346841; --err: #8d4039;
+}
+:root[data-theme="moss-dark"] {
+  --bg-canvas: #131916; --bg-surface: #191f1c; --bg-low: #1e2421;
+  --ink: #d6d9d0; --ink-2: #b6b9b0; --ink-3: #999b93;
+  --border: #252b28; --border-strong: #5a625d;
+  --accent: #92c8b3; --on-accent: #03261b; --ok: #9ecba6; --err: #efa9a1;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-canvas);
+  color: var(--ink);
+  font: 14px/1.55 var(--ui);
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.header {
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+}
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--bg-low);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 8px;
+}
+.link-btn {
+  font: 12px var(--ui);
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.link-btn:disabled { opacity: .45; cursor: default; }
+.resume-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-canvas);
+  color: var(--ink-2);
+  font: 12px var(--ui);
+  cursor: pointer;
+}
+.resume-pill[hidden] { display: none; }
+.resume-pill strong { color: var(--ink); font-weight: 600; }
+.resume-left {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snap-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-canvas);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.snap-row[hidden] { display: none; }
+.snap-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.snap-thumb {
+  width: 24px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.snap-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snap-remove {
+  font: 12px var(--ui);
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  padding: 2px 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px 2px;
+  flex-shrink: 0;
+}
+.chips[hidden] { display: none; }
+.chip {
+  font: 12px var(--ui);
+  color: var(--ink-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.msg {
+  max-width: 92%;
+  padding: 8px 11px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+}
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-bottom-right-radius: 4px;
+}
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+.msg.tool {
+  align-self: flex-start;
+  background: var(--bg-low);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 8px;
+}
+.msg.tool.err { color: var(--err); }
+.thinking {
+  font-size: 12px;
+  color: var(--ink-3);
+  padding: 2px 4px;
+}
+.composer {
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.composer textarea {
+  flex: 1;
+  min-height: 38px;
+  max-height: 110px;
+  resize: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-canvas);
+  color: var(--ink);
+  font: 14px/1.4 var(--ui);
+  padding: 8px 10px;
+  outline: none;
+}
+.composer button {
+  height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 600 13px var(--ui);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.composer button:disabled { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="head-row">
+      <div class="brand">
+        <span>Akashic</span>
+        <span class="badge" id="projectBadge">加载中…</span>
+      </div>
+      <button class="link-btn" id="openFullBtn" disabled>在 akashic 继续</button>
+    </div>
+    <button class="resume-pill" id="resumePill" hidden>
+      <span class="resume-left"><strong>接着上次：</strong><span id="resumeTitle"></span></span>
+      <span>切换</span>
+    </button>
+    <div class="snap-row" id="snapRow" hidden>
+      <div class="snap-left">
+        <img class="snap-thumb" id="snapThumb" alt="" hidden>
+        <span class="snap-meta" id="snapMeta">快照</span>
+      </div>
+      <button class="snap-remove" id="snapRemove">本次不发</button>
+    </div>
+  </div>
+
+  <div class="chips" id="chips" hidden></div>
+
+  <div class="messages" id="messages">
+    <div class="empty" id="emptyHint">正在准备当前屏幕上下文…</div>
+  </div>
+
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="问问这一屏，或让我帮你处理…"></textarea>
+    <button id="sendBtn" disabled>发送</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  // 严格读取 Akashic 主题运行时使用的 akashic_theme Cookie，缺省跟随系统深浅色。
+  function applyAkashicTheme() {
+    const valid = new Set(["light", "dark", "ochre-light", "ochre-dark", "moss-light", "moss-dark"]);
+    let raw = "";
+    try {
+      const m = document.cookie.match(/(?:^|;\s*)akashic_theme=([^;]+)/);
+      if (m) raw = decodeURIComponent(m[1]).trim();
+    } catch (_) {}
+    if (valid.has(raw)) {
+      document.documentElement.setAttribute("data-theme", raw);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+  applyAkashicTheme();
+
+  const params = new URLSearchParams(location.search);
+  const invokeId = params.get("invoke") || "";
+  const state = {
+    invoke: null,
+    ready: false,
+    sessionId: "",
+    includeScreenshot: true,
+    includeUiTree: true,
+    seenSeq: -1,
+    renderedIds: new Set(),
+    es: null,
+    busy: false,
+    thinkingEl: null
+  };
+
+  const el = {
+    projectBadge: document.getElementById("projectBadge"),
+    openFullBtn: document.getElementById("openFullBtn"),
+    resumePill: document.getElementById("resumePill"),
+    resumeTitle: document.getElementById("resumeTitle"),
+    snapRow: document.getElementById("snapRow"),
+    snapThumb: document.getElementById("snapThumb"),
+    snapMeta: document.getElementById("snapMeta"),
+    snapRemove: document.getElementById("snapRemove"),
+    chips: document.getElementById("chips"),
+    messages: document.getElementById("messages"),
+    emptyHint: document.getElementById("emptyHint"),
+    input: document.getElementById("input"),
+    sendBtn: document.getElementById("sendBtn")
+  };
+
+  function scrollBottom() {
+    el.messages.scrollTop = el.messages.scrollHeight;
+  }
+
+  function showNotice(text, isErr) {
+    el.emptyHint.hidden = true;
+    const div = document.createElement("div");
+    div.className = "msg tool" + (isErr ? " err" : "");
+    div.textContent = text;
+    el.messages.appendChild(div);
+    scrollBottom();
+  }
+
+  function clearThinking() {
+    if (state.thinkingEl) {
+      state.thinkingEl.remove();
+      state.thinkingEl = null;
+    }
+  }
+
+  function showThinking(text) {
+    clearThinking();
+    const div = document.createElement("div");
+    div.className = "thinking";
+    div.textContent = text || "思考中…";
+    el.messages.appendChild(div);
+    state.thinkingEl = div;
+    scrollBottom();
+  }
+
+  function appendMsg(item) {
+    if (!item || !item.message_id || state.renderedIds.has(item.message_id)) return;
+    state.renderedIds.add(item.message_id);
+    el.emptyHint.hidden = true;
+    el.chips.hidden = true;
+
+    if (item.role === "user") {
+      const div = document.createElement("div");
+      div.className = "msg user";
+      div.textContent = item.text || (item.has_image ? "[屏幕截图]" : "");
+      el.messages.appendChild(div);
+      scrollBottom();
+      return;
+    }
+    if (item.role === "assistant") {
+      clearThinking();
+      if (item.tools && item.tools.length) {
+        const t = document.createElement("div");
+        t.className = "msg tool";
+        t.textContent = "调用工具：" + item.tools.join("、");
+        el.messages.appendChild(t);
+      }
+      if (item.text) {
+        const div = document.createElement("div");
+        div.className = "msg assistant";
+        div.textContent = item.text;
+        el.messages.appendChild(div);
+      }
+      if (item.finish === "continue") {
+        showThinking("执行工具中…");
+      }
+      scrollBottom();
+      return;
+    }
+    if (item.role === "tool") {
+      const outcomeMap = {
+        success: "已完成：",
+        denied: "已拒绝：",
+        error: "工具失败：",
+        interrupted: "已中断："
+      };
+      const prefix = outcomeMap[item.outcome] || (item.is_error ? "工具失败：" : "已完成：");
+      const t = document.createElement("div");
+      t.className = "msg tool" + (item.is_error ? " err" : "");
+      t.textContent = prefix + (item.tool_name || "tool");
+      el.messages.appendChild(t);
+      scrollBottom();
+      return;
+    }
+    if (item.role === "control") {
+      clearThinking();
+      if (item.text) showNotice("状态：" + item.text, item.kind === "abandon");
+    }
+  }
+
+  function closeStream() {
+    if (state.es) {
+      state.es.close();
+      state.es = null;
+    }
+  }
+
+  function connectStream(sessionId, afterSeq) {
+    closeStream();
+    el.openFullBtn.disabled = !sessionId;
+    if (!sessionId) return;
+    const url = "/api/phone-assist/stream/" + encodeURIComponent(sessionId) + "?after_seq=" + encodeURIComponent(String(afterSeq));
+    const es = new EventSource(url);
+    es.addEventListener("message", (ev) => {
+      try {
+        const item = JSON.parse(ev.data);
+        if (typeof item.seq === "number") state.seenSeq = Math.max(state.seenSeq, item.seq);
+        appendMsg(item);
+      } catch (_) {}
+    });
+    es.addEventListener("error", () => {
+      if (es.readyState === EventSource.CLOSED) {
+        clearThinking();
+        showNotice("实时连接已断开，请点右上角在完整聊天查看。", true);
+      }
+    });
+    state.es = es;
+  }
+
+  async function loadHistory(sessionId) {
+    try {
+      const res = await fetch("/api/phone-assist/history/" + encodeURIComponent(sessionId));
+      if (!res.ok) {
+        showNotice("读取历史失败（HTTP " + res.status + "）", true);
+        return;
+      }
+      const data = await res.json();
+      el.messages.innerHTML = "";
+      state.renderedIds.clear();
+      state.seenSeq = typeof data.through_seq === "number" ? data.through_seq : -1;
+      (data.messages || []).forEach(appendMsg);
+      connectStream(sessionId, state.seenSeq);
+    } catch (e) {
+      showNotice("读取历史异常：" + e.message, true);
+    }
+  }
+
+  function renderChips(appLabel) {
+    const list = ["总结这一页重点", "提取关键时间/事项", "有什么需要注意的？"];
+    if (appLabel && /笔记|备忘|Keep|微信|WeChat|日历/.test(appLabel)) {
+      list[1] = "把里面的日程记到日历";
+    }
+    el.chips.innerHTML = "";
+    list.forEach((txt) => {
+      const btn = document.createElement("button");
+      btn.className = "chip";
+      btn.textContent = txt;
+      btn.addEventListener("click", () => sendText(txt));
+      el.chips.appendChild(btn);
+    });
+    el.chips.hidden = false;
+  }
+
+  async function initInvoke() {
+    if (!invokeId) {
+      el.projectBadge.textContent = "未唤起";
+      el.emptyHint.textContent = "缺少唤起上下文，请重新按住底部横条唤起。";
+      return;
+    }
+    try {
+      const res = await fetch("/api/phone-assist/invoke/" + encodeURIComponent(invokeId));
+      if (!res.ok) {
+        el.projectBadge.textContent = "已过期";
+        el.emptyHint.textContent = res.status === 410 ? "本次屏幕快照已过期，请重新唤起。" : ("初始化失败（HTTP " + res.status + "）");
+        return;
+      }
+      const inv = await res.json();
+      state.invoke = inv;
+      state.sessionId = inv.new_session_id || "";
+      state.ready = true;
+      el.sendBtn.disabled = false;
+      el.emptyHint.textContent = "看着当前屏幕，直接问我想知道什么。";
+      el.projectBadge.textContent = inv.project_id ? ("项目：" + (inv.project_name || "手机")) : "普通会话";
+      if (inv.has_screenshot || inv.has_ui_tree) {
+        el.snapRow.hidden = false;
+        const kind = inv.has_screenshot ? "快照" : "仅文本";
+        el.snapMeta.textContent = kind + " · " + (inv.app_label || "当前屏幕") + " " + (inv.captured_at || "");
+        if (inv.screenshot_preview_b64) {
+          el.snapThumb.src = "data:image/png;base64," + inv.screenshot_preview_b64;
+          el.snapThumb.hidden = false;
+        }
+      }
+      if (inv.resume_candidate && inv.resume_candidate.session_id) {
+        el.resumePill.hidden = false;
+        el.resumeTitle.textContent = inv.resume_candidate.title || "上次看屏对话";
+        el.resumePill.addEventListener("click", async () => {
+          state.sessionId = inv.resume_candidate.session_id;
+          el.resumePill.hidden = true;
+          await loadHistory(state.sessionId);
+        }, { once: true });
+      }
+      renderChips(inv.app_label || "");
+    } catch (e) {
+      el.projectBadge.textContent = "离线";
+      el.emptyHint.textContent = "初始化失败：" + e.message;
+    }
+  }
+
+  function newClientRequestId() {
+    return "req_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10);
+  }
+
+  async function sendText(raw) {
+    const isFromInput = raw === undefined;
+    const text = (isFromInput ? el.input.value : raw).trim();
+    if (!text || state.busy || !state.ready) return;
+    state.busy = true;
+    el.sendBtn.disabled = true;
+    el.resumePill.hidden = true;
+    el.chips.hidden = true;
+    el.emptyHint.hidden = true;
+    showThinking("发送中…");
+    try {
+      const res = await fetch("/api/phone-assist/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoke_id: invokeId,
+          session_id: state.sessionId || null,
+          client_request_id: newClientRequestId(),
+          text,
+          include_screenshot: state.includeScreenshot,
+          include_ui_tree: state.includeUiTree
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        clearThinking();
+        showNotice("发送失败：" + (data.detail || ("HTTP " + res.status)), true);
+        return;
+      }
+      if (isFromInput) el.input.value = "";
+      if (!state.es || state.sessionId !== data.session_id) {
+        state.sessionId = data.session_id;
+        connectStream(state.sessionId, state.seenSeq);
+      }
+      el.openFullBtn.disabled = false;
+      showThinking(data.steered ? "已插话，等待回复…" : "思考中…");
+    } catch (e) {
+      clearThinking();
+      showNotice("网络异常：" + e.message, true);
+    } finally {
+      state.busy = false;
+      el.sendBtn.disabled = !state.ready;
+    }
+  }
+
+  el.snapRemove.addEventListener("click", () => {
+    state.includeScreenshot = false;
+    state.includeUiTree = false;
+    el.snapRow.hidden = true;
+  });
+
+  el.openFullBtn.addEventListener("click", () => {
+    if (!state.sessionId) return;
+    closeStream();
+    location.href = "akashic-shell://open-session?session=" + encodeURIComponent(state.sessionId);
+  });
+
+  el.sendBtn.addEventListener("click", () => sendText());
+  el.input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      ev.preventDefault();
+      sendText();
+    }
+  });
+  window.addEventListener("pagehide", closeStream);
+  window.addEventListener("beforeunload", closeStream);
+
+  initInvoke();
+})();
+</script>
+</body>
+</html>
