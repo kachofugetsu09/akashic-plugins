@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Mapping
+from datetime import datetime
+
+from agent.plugin_composition import RUNTIME_STARTED, RUNTIME_STOPPING, Context, stop_spawned
+from agent.plugin_composition.plugin_config import PLUGIN_CONFIG
+from core.common.file_io import run_file_io
+from plugins.assets.contract import INSTALLED_ASSETS
+from plugins.context.contract import MATERIALS_V4
+from plugins.host_execution.contract import PROCESSES
+from plugins.ledger.contract import Message
+from plugins.ledger.contract import MESSAGE_CATALOG
+from plugins.models.contract import CHAT_MODELS, MODEL_CALL_STATS, MODEL_CATALOG
+from plugins.onboarding.contract import ONBOARDING
+from plugins.plugin_settings.contract import SETTINGS_FORMS
+from plugins.programmatic.contract import PROGRAMMATIC
+from plugins.tools.contract import TOOL_DISPLAY
+from plugins.ui.contract import UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest
+from plugins.userinformation.contract import USER_INFORMATION
+
+from . import panel
+from .contract import WATCH_EVENTS
+from .runtime import Runtime, count_items, count_notes
+from .settings import Config, register_settings, register_setup, watch_enabled_in
+
+POINTER = (
+    "你在后台留着 {notes} 行便签（watch/notes.md），待看里有 {inbox} 条（watch/inbox.md）。那是你自己的事，不是这次对话的议程。你在后台各轮去过哪、留下了什么，系统记在 watch/trail.md，他问起你背地里做了什么就照它说。"
+    "先听他这句话在说什么、此刻是什么状态，就回应这一件：他报了个状态或一件事，接住它；他交代了事，就去办，能自己定的自己定，不请示，也不问他已经说过的。"
+    "回应比提问重要。想问只问一句，而且是顺着他刚说的话问；他没接的问题不问第二遍。他此刻没有心思多说，就短一点，不问。"
+    "他的话短，你也短：他说一两句，你回三五句就够，不要把一句话展开成一篇。他分享一件高兴的事，就和他一起高兴，不要转成叮嘱和建议；没人问就不给建议。"
+    "你平时看到、记下的关于他的事，和他正在说的有关时就用上，让他知道你看见了，说得出是从哪知道的；无关的不提，更不要一件件罗列。"
+    "他提到一件过后才有结果的事，自己记一行，到时候挑他有空的时刻问（办法在技能 watch 里）。"
+    "他问一件还在变的事现在怎么样了，就是在等它：你够得着的就自己去看，不问他要你本来看得到的东西。"
+    "这件事还没到头，回答就不算做完：结束这一轮之前，先按技能 watch 里「他没让你盯，但他在等的事」把后面怎么接着看安排好，别让他问第二遍；已经结束的事和随口一问的常识不用。"
+    "他问的事和记忆里某个专题沾边，先读它再答：照上次走通的路走，上次卡住的地方别再去撞，直接告诉他卡在哪、缺什么；上次看到的和这次看到的放在一起说。你在他各处看到过什么，按天记在 watch/journal/；他问起以前某天的数或记录，先到那里搜。"
+    "他说一件事是他自己先从别处知道的、你没告诉他，这是你漏了：去查它当时被怎么判的，在 watch/cases.md 记一行，再改根子（压掉它的那条嘱托，或者你对他的认识里缺的那一句），让同一类的别的事也不再漏，不要只给这一样东西加一条特例。"
+    "他直接问你知道些什么，就坦白全说。")
+
+api_version = 3
+name = "watch"
+version = "1.16.0"
+desc = "值班（默认关闭）：便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；找不到低价或免费 token 时不建议开启"
+inject = (PLUGIN_CONFIG, CHAT_MODELS, MODEL_CATALOG, MESSAGE_CATALOG, PROGRAMMATIC, PROCESSES)
+workspace_roots = ("watch",)
+
+
+class Current:
+    """用户信息入口的提供方：各来源最近一条状态事件。"""
+
+    def __init__(self, runtime: Runtime) -> None:
+        self._runtime = runtime
+
+    async def describe(self) -> Mapping[str, object]:
+        return {"queries": {"current": {
+            "description": "各来源最近一次报告的用户状态和报告时间；没有某个来源不等于否定。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}}}
+
+    async def query(self, query: str, arguments: Mapping[str, object]) -> Mapping[str, object]:
+        if query != "current" or arguments:
+            return {"status": "invalid_query", "error": "Use current without arguments"}
+        items = [{"source": event.source, "since": event.at, "state": " — ".join(part for part in (event.title, event.text) if part)[:1000]}
+                 for event in await self._runtime.states()]
+        return {"items": items, "semantics": "Latest state each source reported, with the time it started. Not a live measurement."}
+
+
+async def apply(ctx: Context) -> None:
+    """事件入口始终可用；只有配置了主对话，值班循环才启动。"""
+    config = Config.model_validate(ctx.config)
+    active = watch_enabled_in(ctx.config) and bool(config.target)
+    runtime = Runtime(ctx, config)
+    _ = await ctx.provide(WATCH_EVENTS, runtime)
+    _ = await ctx.inject((SETTINGS_FORMS, PLUGIN_CONFIG, MODEL_CATALOG),
+                         register_settings, name="settings")
+    _ = await ctx.inject((ONBOARDING, MODEL_CATALOG, PLUGIN_CONFIG), register_setup, name="onboarding")
+    # 机制说明是普通技能，主 Agent 需要时用 load_skill 读取。
+    _ = await ctx.inject((INSTALLED_ASSETS,), lambda child: child.require(INSTALLED_ASSETS).register(child, "skills", "skills"),
+                         name="skills")
+
+    # 用户来主对话聊天时给主 Agent 的一段提醒：后台攒下的东西不是这次对话的议程，先回应他这句话。
+    async def pointer(snapshot: tuple[Message, ...], _source: str) -> dict[str, object]:
+        if not active or not snapshot or snapshot[-1].session_id != config.target:
+            return {}
+        notes, inbox = count_notes(runtime.root / "notes.md"), count_items(runtime.root / "inbox.md")
+        return {"reminders": ({"name": "watch", "priority": 300, "replay": False, "text": POINTER.format(notes=notes, inbox=inbox)},)}
+
+    _ = await ctx.inject((MATERIALS_V4,), lambda child: child.require(MATERIALS_V4).register(
+        child, name="watch", kind="context", prepare=pointer), name="pointer")
+    # 主 Agent 平时聊天想知道"用户现在怎么样"时，经统一的用户信息入口读到同一份状态。
+    _ = await ctx.inject((USER_INFORMATION,), lambda child: child.require(USER_INFORMATION).register(child, Current(runtime)),
+                         name="information")
+    watcher: asyncio.Task[None] | None = None
+
+    async def start(_event: object) -> None:
+        nonlocal watcher
+        if active:
+            watcher = await ctx.spawn(runtime.follow(), name="watch")
+
+    async def stop(_event: object) -> None:
+        await stop_spawned(watcher)
+
+    _ = await ctx.on(RUNTIME_STARTED, start)
+    _ = await ctx.on(RUNTIME_STOPPING, stop)
+
+    # 值班面板：侧栏插件面板里的一项，数据从日志、事件文件和账本现读。
+    async def register_panel(child: Context) -> object:
+        display = child.require(TOOL_DISPLAY)
+        call_stats = child.require(MODEL_CALL_STATS)
+
+        def tool_name(binding_id: str) -> str:
+            try:
+                return display(binding_id).name
+            except Exception:
+                return binding_id[:8]
+
+        async def query(method: str, payload: dict[str, object], *, session_id: str | None, turn_id: str | None) -> dict[str, object]:
+            now = datetime.now(runtime.zone)
+            catalog = ctx.require(MESSAGE_CATALOG)
+            if method == "status":
+                reader = catalog.reader(config.target) if config.target else None
+                return await run_file_io(lambda: panel.read_status(runtime.root, now.date(), reader, now))
+            if method == "round":
+                reader = catalog.reader(panel.parse_session(payload))
+                steps, usage = await run_file_io(lambda: panel.read_round_detail(reader, tool_name, call_stats))
+                return {"steps": steps, "usage": usage}
+            if method == "log_verdicts":
+                day = panel.parse_day(payload, now.date())
+                start = panel.parse_int_arg(payload, "start", default=None, minimum=0)
+                end = panel.parse_int_arg(payload, "end", default=None, minimum=0)
+                offset = panel.parse_int_arg(payload, "offset", default=0, minimum=0) or 0
+                limit = panel.parse_int_arg(payload, "limit", default=200, minimum=1, maximum=200) or 200
+                return await run_file_io(
+                    lambda: panel.read_log_verdicts(runtime.root, day, start=start, end=end, offset=offset, limit=limit)
+                )
+            if method == "run":
+                kind = str(payload.get("kind") or "")
+                if kind not in ("review", "dream", "inbox") or not config.target:
+                    raise PluginUiRpcInvalidRequest("kind 只能是 review、dream、inbox，并且要先配置主对话")
+                return {"status": await runtime.kick(kind)}
+            if method != "day":
+                raise PluginUiRpcInvalidRequest(f"不支持的查询：{method}")
+            day = panel.parse_day(payload, now.date())
+            talk = await run_file_io(lambda: panel.read_talk(catalog.reader(config.target), day, now)) if config.target else []
+            ticks, usage = await run_file_io(lambda: panel.read_day_usage(runtime.root, day, catalog.reader, call_stats))
+            ticks = panel.compact_ticks_for_day(ticks)
+            lanes = await run_file_io(lambda: panel.read_lanes(runtime.root, day))
+            files = {name: runtime.files.text(f"watch/{name}") or "" for name in ("WATCH.md", "notes.md", "inbox.md")}
+            return {"date": day.isoformat(), "today": now.date().isoformat(), "now": f"{now:%H:%M}", "interval": config.interval_minutes,
+                    "ticks": ticks, "lanes": lanes, "talk": talk, "files": files, "usage": usage}
+
+        return await child.require(UI_SLOTS).register_plugin_ui(
+            child, PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("sidebar.panels",)), query=query)
+
+    _ = await ctx.inject((UI_SLOTS, TOOL_DISPLAY, MODEL_CALL_STATS), register_panel, name="panel")
