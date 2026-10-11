@@ -2,18 +2,22 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 import json
 import os
 from pathlib import Path
+import signal
 import sqlite3
 import subprocess
 import sys
 import tempfile
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 PROVIDER = '''import asyncio
+import os
 import sys
 from agent.plugin_composition.tasks import RESTART_GATE
 api_version = 3
@@ -26,6 +30,11 @@ async def apply(ctx):
         transport, _ = await asyncio.get_running_loop().connect_read_pipe(
             lambda: asyncio.StreamReaderProtocol(reader), sys.stdin.buffer)
         try:
+            if os.environ.get("AKASHIC_SUPERVISED") == "1":
+                sys.stdout.write("x" * (1024 * 1024) + "\\n")
+                sys.stderr.write("x" * (1024 * 1024) + "\\n")
+                sys.stdout.flush()
+                sys.stderr.flush()
             print("SCENARIO_READY", flush=True)
             line = await reader.readline()
             error = RuntimeError("native owner failed") if line == b"fail\\n" else None
@@ -42,8 +51,70 @@ async def apply(ctx):
 '''
 
 
+async def stop_ready_process(
+    config: Path, workspace: Path, peer_workspace: Path, env: dict[str, str],
+) -> None:
+    """通过真实就绪管道协调 SIGTERM，核对取消后的关闭回执。"""
+    # 1. 使用宿主生命周期管道等待完整启动，避免按时间猜测就绪。
+    read_fd, write_fd = os.pipe()
+    reader = asyncio.StreamReader()
+    transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+        lambda: asyncio.StreamReaderProtocol(reader), os.fdopen(read_fd, "rb"))
+    boot_id = uuid4().hex
+    # 日志写入文件，避免等待就绪或退出时填满无人读取的管道。
+    with closing(transport), tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as error:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, str(ROOT / "main.py"), "gateway", "--config", str(config),
+                "--workspace", str(workspace), pass_fds=(write_fd,),
+                env={**env, "AKASHIC_SUPERVISED": "1", "AKASHIC_BOOT_ID": boot_id,
+                     "AKASHIC_RESTART_NONCE": uuid4().hex, "AKASHIC_LIFECYCLE_FD": str(write_fd)},
+                stdin=asyncio.subprocess.PIPE, stdout=output, stderr=error)
+        finally:
+            os.close(write_fd)
+        try:
+            async with asyncio.timeout(20):
+                while True:
+                    line = await reader.readline()
+                    assert line, "runtime 在完整就绪前关闭生命周期管道"
+                    if json.loads(line)["type"] == "ready":
+                        break
+            # 2. 真实第二进程不能抢占 workspace，也不能从别的 workspace 共用发布 owner。
+            for target, conflict in (
+                (workspace, "workspace 已由其他 runtime 占用"),
+                (peer_workspace, "plugin-home 已有发布或消费 owner"),
+            ):
+                contender = await asyncio.create_subprocess_exec(
+                    sys.executable, str(ROOT / "main.py"), "gateway", "--config", str(config),
+                    "--workspace", str(target), env=env,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                try:
+                    stdout, stderr = await asyncio.wait_for(contender.communicate(), 20)
+                    assert contender.returncode != 0 and conflict in stderr.decode(), (stdout, stderr)
+                finally:
+                    if contender.returncode is None:
+                        contender.kill()
+                        await contender.communicate()
+                assert (workspace / ".runtime-ready.json").exists()
+            # 3. 保持输入管道打开，确保退出来自 SIGTERM，而不是输入 EOF。
+            process.send_signal(signal.SIGTERM)
+            await asyncio.wait_for(process.wait(), 20)
+            output.seek(0)
+            error.seek(0)
+            assert process.returncode == 0, (output.read(), error.read())
+            assert not (workspace / ".runtime-ready.json").exists()
+            closed = json.loads((workspace / "runtime/closed" / f"{boot_id}.json").read_text())
+            assert closed["state"] == "closed" and closed["pid"] == process.pid
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            assert process.stdin is not None
+            process.stdin.close()
+
+
 async def run(base: Path) -> dict[str, bool]:
-    """启动真实 main.py 子进程；管道协调三次 boot，不使用 sleep。"""
+    """启动真实 main.py 子进程；管道协调退出，不使用 sleep。"""
     from agent.plugins.install import install_git_plugin
     from bootstrap.init_workspace import init_workspace
     from plugins.ledger.log import MessageLog
@@ -91,9 +162,17 @@ async def run(base: Path) -> dict[str, bool]:
         assert json.loads((workspace / "runtime/endpoints.json").read_text())["endpoints"] == []
         with sqlite3.connect(workspace / "sessions.db") as db:
             assert db.execute("SELECT * FROM messages ORDER BY rowid").fetchall() == rows
+    peer_workspace = base / "peer-workspace"
+    init_workspace(config_path=config, workspace=peer_workspace)
+    await stop_ready_process(config, workspace, peer_workspace, env)
+    assert json.loads((workspace / "runtime/endpoints.json").read_text())["endpoints"] == []
+    with sqlite3.connect(workspace / "sessions.db") as db:
+        assert db.execute("SELECT * FROM messages ORDER BY rowid").fetchall() == rows
     return {"native_process_stop": True, "admission_closed": True,
             "failure_exit_and_visible_reason": True, "eof_exit_zero": True,
-            "restart_after_failure": True, "messages_preserved": True}
+            "restart_after_failure": True, "messages_preserved": True,
+            "sigterm_after_ready": True, "readiness_cleared_and_closed": True,
+            "workspace_conflict_rejected": True, "publication_conflict_rejected": True}
 
 
 if __name__ == "__main__":

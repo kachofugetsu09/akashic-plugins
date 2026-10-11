@@ -28,13 +28,12 @@ from plugins.host_execution.bridge import host_bridge_pb2 as pb
 from plugins.host_execution.bridge.factory import HostBridgeRpcError
 from plugins.host_execution.bridge.client import HostBridgeShellProcessManager
 from plugins.host_execution.bridge.server import HostBridgeService
-from bootstrap.app import _run_primary_tasks
 from fastapi import FastAPI
 from bootstrap.web_shell import create_web_shell_app
 from agent.plugin_composition.endpoints import Endpoint, save_endpoint_plan
 from core.common.unix_socket import socket_alias_path
 from core.common import file_io
-from core.common.diagnostic_log import AkashicJsonFormatter, diagnostic_context
+from core.common.diagnostic_log import AkashicJsonFormatter, configure_logging, diagnostic_context
 
 COMMIT = "a" * 40
 DIGEST = "b" * 64
@@ -201,11 +200,9 @@ async def run() -> None:
             status = monitor.HostBridgeStatus(state="checking")
             service.probe_error = grpc.StatusCode.DEADLINE_EXCEEDED
             monitoring = asyncio.create_task(monitor._monitor(client(), status=status))
-            sibling = asyncio.create_task(asyncio.Event().wait())
-            primary = asyncio.create_task(_run_primary_tasks([monitoring, sibling]))
-            tasks.append(primary)
+            tasks.append(monitoring)
             await service.until("probe", 2)
-            assert not primary.done() and not sibling.done()
+            assert not monitoring.done()
             assert status.state == "degraded" and status.code == "DEADLINE_EXCEEDED"
             assert not service._managers, "健康探测不能创建 execution manager"
             workspace = root / "dashboard"
@@ -226,21 +223,26 @@ async def run() -> None:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=shell), base_url="http://local",
                                          headers={"sec-fetch-site": "same-origin"}) as web:
                 response = await web.get("/api/runtime/host-bridge")
+                assert response.status_code == 200 and not dashboard_task.done()
                 assert response.json()["state"] == "degraded"
                 service.probe_error = None
                 await service.until("probe", 4)
                 assert (await web.get("/api/runtime/host-bridge")).json()["state"] == "healthy"
-            results.append("probe_deadline_core_survives_and_public_shell_http_recovers")
+                results.append("probe_deadline_monitor_survives_and_public_shell_http_recovers")
 
-            # 真正断开 UDS transport，然后重建监听；保留 service 的 boot/lease owner。
-            await server.stop()
-            await expect_rpc(grpc.StatusCode.UNAVAILABLE, control.probe())
-            await until(lambda: status.state == "degraded")
-            assert not primary.done() and not sibling.done()
-            server = transport.Server(service)
-            await server.start(socket)
-            await until(lambda: status.state == "healthy")
-            results.append("real_transport_disconnect_and_reconnect")
+                # 真正断开 UDS transport，其他宿主任务和公开 HTTP 必须继续服务。
+                await server.stop()
+                await expect_rpc(grpc.StatusCode.UNAVAILABLE, control.probe())
+                await until(lambda: status.state == "degraded")
+                assert not monitoring.done() and not dashboard_task.done()
+                response = await web.get("/api/runtime/host-bridge")
+                assert response.status_code == 200
+                assert response.json()["state"] == "degraded" and response.json()["code"] == "UNAVAILABLE"
+                server = transport.Server(service)
+                await server.start(socket)
+                await until(lambda: status.state == "healthy")
+                assert (await web.get("/api/runtime/host-bridge")).json()["state"] == "healthy"
+                results.append("real_transport_disconnect_and_reconnect_preserve_public_http")
 
             # 并发首次调用只登记一次；短暂心跳故障保持同一个 execution owner。
             worker = client()
@@ -467,9 +469,9 @@ async def run() -> None:
             # 认证错误不能被恢复策略吞掉；旧 boot 的所有执行入口被 fencing。
             await expect_rpc(grpc.StatusCode.PERMISSION_DENIED, client(token="wrong").probe())
             await control.close_transport()
-            primary.cancel()
+            monitoring.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await primary
+                await monitoring
             next_boot = client("next-boot")
             await next_boot.claim_boot()
             await expect_rpc(grpc.StatusCode.PERMISSION_DENIED, io.probe())
@@ -492,4 +494,5 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
+    configure_logging()
     asyncio.run(run())
