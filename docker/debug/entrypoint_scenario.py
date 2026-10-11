@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from agent.plugin_composition.config_input import load_config
+from agent.plugins.bundles import set_plugin_choice
 
 
 def docker(arguments: list[str]) -> subprocess.CompletedProcess[bytes]:
@@ -34,12 +35,13 @@ async def exercise(image: str, sandbox: Path) -> dict[str, bool]:
     """一次性 sandbox 独占持久状态，代码挂载只读并核对既有消息。"""
     # 1. 使用实际 provider 源码；只安装公共 API 的实现不参与组合。
     names = ("gateway", "sources", "models", "content", "commands", "conversation", "programmatic",
-             "turn_projection", "ui", "reply", "onboarding", "workloads", "delivery")
+             "turn_projection", "ui", "reply", "onboarding", "workloads", "delivery",
+             "ledger", "channels")
     for name in names:
         shutil.copytree(ROOT / "plugins" / name, sandbox / "sources" / name,
                         ignore=shutil.ignore_patterns("__pycache__"))
     config = sandbox / "config.toml"
-    config.write_text('[agent.plugins]\ndisabled_builtin = ["reply", "onboarding", "workloads", "delivery"]\n')
+    config.write_text("[runtime]\n")
     before = config.read_bytes()
     stable = sandbox / "workspace/runtime/plugin-stable.json"
     options = ["--network", "none", "--mount", f"type=bind,src={ROOT},dst=/app,readonly",
@@ -49,6 +51,10 @@ async def exercise(image: str, sandbox: Path) -> dict[str, bool]:
                "-e", "AKASHIC_EXECUTION_MODE=local"]
     docker(["run", "--rm", *options, image, "init"])
     assert stable.is_file() and json.loads(stable.read_text())["root_ref"] is None
+    for plugin in ("reply", "onboarding", "workloads", "delivery"):
+        set_plugin_choice(sandbox / "workspace", plugin, enabled=False)
+    patch = sandbox / "workspace/bundle.patch.toml"
+    saved_patch = patch.read_bytes()
     gateway = sandbox / "workspace/plugin-data/gateway-builtin/config.input.json"
     saved_gateway = gateway.read_bytes()
     values, _ = load_config(gateway.parent)
@@ -130,6 +136,7 @@ async def exercise(image: str, sandbox: Path) -> dict[str, bool]:
     assert config.read_bytes() == before and gateway.read_bytes() == saved_gateway
     with sqlite3.connect(sandbox / "workspace/sessions.db") as database:
         assert database.execute("SELECT * FROM messages ORDER BY session_key,seq").fetchall() == rows
+    assert patch.read_bytes() == saved_patch
     return {"debug_image_entrypoint": True, "init_owner_config": True, "run_rpc": True,
             "exec_input": True, "restart_preserves_messages": True, "stdio_eof": True,
             "core_config_not_rewritten": True, "gateway_config_not_overwritten": True}

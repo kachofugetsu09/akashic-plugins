@@ -133,13 +133,12 @@ def _tree_digest(root: Path) -> str:
 def _write_runtime_config(sandbox: Path) -> None:
     """Write a private config whose runtime state stays in the sandbox."""
 
-    config = """\
-[agent.plugins]
-disabled_builtin = ["subagent"]
-"""
     path = sandbox / "config.toml"
-    path.write_text(config, encoding="utf-8")
+    path.write_text("[runtime]\n", encoding="utf-8")
     path.chmod(0o600)
+    from agent.plugins.bundles import set_plugin_choice
+
+    set_plugin_choice(sandbox / "workspace", "subagent", enabled=False)
     from agent.plugin_composition.config_input import save_config
 
     save_config(sandbox / "workspace/plugin-data/akashic_clients-builtin", {

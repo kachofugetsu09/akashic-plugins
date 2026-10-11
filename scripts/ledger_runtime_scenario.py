@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -25,12 +26,16 @@ version = "1.0.0"
 inject = (CHANNELS, MESSAGE_WRITERS, OWNER_STATE, SESSION_ADMISSION)
 async def apply(ctx):
     ready = asyncio.Event()
+    entered, release = asyncio.Event(), asyncio.Event()
     adapters = []
     ctx.require(SESSION_ADMISSION).ensure(ctx, "probe:room", SessionAttributes())
     writer = ctx.require(MESSAGE_WRITERS).bind(ctx, author="scenario", source="scenario",
         body_types=(Input, Output), content={"text": lambda part: ContentReferences()})
     owner = ctx.require(OWNER_STATE).open(ctx)
     async def accept(session, identity, message):
+        if identity == "inflight":
+            entered.set()
+            await release.wait()
         def commit(tx):
             write = writer(session)
             result = tx.append(write, identity, Input((ContentPart("text", message.content),)))
@@ -72,6 +77,17 @@ async def apply(ctx):
             "provider_message_id": identity, "session_key_override": "probe:room"}), "sender", "room")
         assert await ports.durable_inbound.reserve(raw)
         assert await ports.ingress.admit(raw)
+    async def hold(entered, release):
+        write = writer("probe:room")
+        def commit(tx):
+            result = tx.append(write, "concurrent", Input(()))
+            entered.set()
+            if not release.wait(20):
+                raise TimeoutError("Ledger 换代没有释放并发写入")
+            return result
+        return await owner.transact_async(commit)
+    await ctx.provide(ServiceKey("scenario.admission"), (entered, release))
+    await ctx.provide(ServiceKey("scenario.hold"), hold)
     await ctx.provide(ServiceKey("scenario.receive"), receive)
 '''
 
@@ -104,13 +120,46 @@ async def child(folder, phase):
             await receive('third')
             before = catalog.reader('probe:room').snapshot()
             observer = host._active_generations['observer'].fiber
-            # 安装同一真实 Ledger 的新 generation；数据和无关 Fiber 必须保持。
-            await host.install(source=str(folder / 'ledger'), marketplace='lab', ref_name='',
-                               sparse_paths=[], update_id='ledger-replace')
+            # 1. 真正的 Channel ingress 已取得租约，接纳处理仍暂停在提交之前。
+            input_entered, input_release = root.context.require(ServiceKey('scenario.admission'))
+            incoming = asyncio.create_task(receive('inflight'))
+            await asyncio.wait_for(input_entered.wait(), 10)
+            def admissions():
+                with sqlite3.connect(folder / 'workspace/sessions.db') as db:
+                    return db.execute('SELECT * FROM session_admissions ORDER BY admission_id').fetchall()
+            leases = admissions()
+            assert len(leases) == 1 and leases[0][1] == 'probe:room', leases
+            previous = host._active_generations['ledger@lab'].fiber
+            # 2. 同时持有真实写事务；换代关闭接纳后，旧租约必须原样保留。
+            entered, release = threading.Event(), threading.Event()
+            async def writing():
+                async with root.context.open_service(ServiceKey('scenario.hold')) as port:
+                    return await port(entered, release)
+            pending = asyncio.create_task(writing())
+            try:
+                assert await asyncio.to_thread(entered.wait, 10)
+                await host.install(source=str(folder / 'ledger'), marketplace='lab', ref_name='',
+                                   sparse_paths=[], update_id='ledger-replace')
+                await asyncio.wait_for(previous._admission_closed.wait(), 10)
+                assert not pending.done() and not incoming.done()
+                assert admissions() == leases
+                release.set()
+                committed = await pending
+                assert not incoming.done() and admissions() == leases
+            finally:
+                release.set()
+                input_release.set()
+            await incoming
             await host.wait_idle()
+            assert admissions() == []
             assert host.read_update('ledger-replace').state == 'active'
             assert host._active_generations['observer'].fiber is observer
-            assert root.context.require(MESSAGE_CATALOG).reader('probe:room').snapshot() == before
+            after = root.context.require(MESSAGE_CATALOG).reader('probe:room').snapshot()
+            assert after[:len(before)] == before
+            assert committed in after[len(before):]
+            assert len(after) == len(before) + 3
+            assert [part.value for message in after[len(before):]
+                    for part in message.body.parts] == ['inflight', 'reply:inflight']
             await receive('fourth')
             await host.uninstall('ledger@lab')
             await host.wait_idle()
@@ -126,7 +175,7 @@ async def parent(folder):
     workspace.mkdir()
     PluginSelection(workspace).initialize()
     os.environ.update(HOME=str(folder / 'home'), AKASHIC_PLUGIN_HOME=str(folder / 'home'), AKASHIC_PLUGIN_DISTRIBUTION='')
-    for name in ('channels', 'onboarding'):
+    for name in ('channels', 'onboarding', 'ledger_invariants'):
         shutil.copytree(ROOT / 'plugins' / name, folder / 'sources' / name, ignore=shutil.ignore_patterns('__pycache__'))
     ledger = folder / 'ledger'
     shutil.copytree(ROOT / 'plugins/ledger', ledger, ignore=shutil.ignore_patterns('__pycache__'))
@@ -153,19 +202,27 @@ async def parent(folder):
     with sqlite3.connect(workspace / 'sessions.db') as db:
         before = db.execute('SELECT * FROM messages ORDER BY seq').fetchall()
         assert len(before) == 4
+        assert db.execute('SELECT count(*) FROM session_admissions').fetchone() == (1,)
     (workspace / 'crash').unlink()
     (ledger / 'plugin.py').write_text((ledger / 'plugin.py').read_text() + '\n# replacement scenario\n')
     subprocess.run(['git', '-C', str(ledger), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(ledger), '-c', 'user.name=Scenario', '-c', 'user.email=scenario@example.invalid', 'commit', '-qm', 'second'], check=True)
     process = await asyncio.create_subprocess_exec(*command, 'recover')
-    async with asyncio.timeout(40):
-        assert await process.wait() == 0
+    try:
+        async with asyncio.timeout(40):
+            assert await process.wait() == 0
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
     with sqlite3.connect(workspace / 'sessions.db') as db:
         assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
         after = db.execute('SELECT * FROM messages ORDER BY seq').fetchall()
-        assert after[:4] == before and len(after) == 8
+        assert after[:4] == before and len(after) == 11
+        assert db.execute('SELECT count(*) FROM session_admissions').fetchone() == (0,)
     print(json.dumps({'commit_before_kill': True, 'recovery_no_duplicate': True, 'four_rounds': True,
-                      'ledger_replaced_and_removed': True, 'observer_unchanged': True, 'rows_preserved': True}))
+                      'ledger_replaced_and_removed': True, 'observer_unchanged': True, 'rows_preserved': True, 'write_during_drain': True,
+                      'live_admission_survives_drain': True, 'admissions_released': True}))
 
 if len(sys.argv) > 1:
     asyncio.run(child(Path(sys.argv[1]), sys.argv[2]))

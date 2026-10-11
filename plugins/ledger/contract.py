@@ -440,6 +440,14 @@ class SessionTitleResult:
     title: str | None
 
 
+class AppendChecks(Protocol):
+    async def register(
+        self, ctx: Context, check: Callable[[Message, MessageReader], None],
+    ) -> Effect:
+        """在提交事务中同步检查新消息；异常回滚。reader 只读，回调不得保留它或执行外部效果。"""
+        ...
+
+
 class MessageWriters(Protocol):
     async def register_metadata(
         self, ctx: Context, *, keys: frozenset[str],
@@ -937,3 +945,20 @@ INPUT_CUSTODY = ServiceKey[InputCustody]("ledger.input_custody.v1")
 CHANNEL_IDENTITY = ServiceKey[ChannelIdentity]("ledger.channel_identity.v1")
 CHANNEL_ATTACHMENT_IMPORT = ServiceKey[ChannelAttachmentImport]("ledger.channel_attachment_import.v1")
 CHANNEL_ATTACHMENT_READ = ServiceKey[ChannelAttachmentRead]("ledger.channel_attachment_read.v1")
+
+APPEND_CHECKS = ServiceKey[AppendChecks]("ledger.append_checks.v1")
+
+def detect_supported_image_mime(head: bytes) -> str | None:
+    """根据文件签名识别 Akashic 支持的图片格式。"""
+
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head.startswith(b"BM"):
+        return "image/bmp"
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return "image/webp"
+    return None

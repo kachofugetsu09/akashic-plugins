@@ -255,18 +255,17 @@ async def check_provenance(app, manager, plugins, workspace):
     token = target.fiber.context.fiber.activation_token
     selected = (workspace / 'runtime/plugin-stable.json').read_bytes()
     effects = (target.data_dir / 'activations.txt').read_bytes()
-    archived_marker = (target.code_dir / '.akashic-source.json').read_bytes()
     marker = plugins / 'aa_marker/.akashic-source.json'
     marker.write_text(json.dumps({'commit': 'new-source-evidence'}))
     await manager.reconcile_changed()
     assert manager.generation('aa_marker') is target
     assert target.fiber.context.fiber.activation_token is token
     assert (workspace / 'runtime/plugin-stable.json').read_bytes() == selected
-    assert (target.code_dir / '.akashic-source.json').read_bytes() == archived_marker
+    assert target.code_dir == plugins / 'aa_marker'
     app.plugin_watcher = PluginWatcher(manager, baseline_revision=manager.watch_revision(), interval_seconds=1)
     app.plugin_watcher_task = asyncio.create_task(app.plugin_watcher.run())
     previous = manager._operation
-    app.plugin_watcher.wake()
+    app.plugin_watcher.request_scan()
     await wait_for(lambda: manager._operation is not previous and manager._operation.task.done(), 'manual full check')
     app.plugin_watcher.stop()
     await app.plugin_watcher_task
@@ -275,7 +274,7 @@ async def check_provenance(app, manager, plugins, workspace):
     assert (target.data_dir / 'activations.txt').read_bytes() == effects
     assert (workspace / 'runtime/plugin-stable.json').read_bytes() == selected
     return {'full_provenance_check': 'passed', 'manual_wake_provenance': 'passed',
-            'installed_provenance_retained': 'passed', 'no_selection_rewrite': 'passed'}
+            'installed_source_used': 'passed', 'no_selection_rewrite': 'passed'}
 
 
 async def check_runtime_cli(root, core):
@@ -346,9 +345,11 @@ async def run(root: Path, core: Path, case: str, seed_core: Path | None) -> dict
                         '--workspace', str(workspace)], env=init_env, check=True, stdout=output, stderr=output)
     if case == 'provenance':
         # 全量检查使用独立且就绪的普通组合，避免无模型默认配置的其他失败。
+        from agent.plugins.bundles import set_plugin_choice
         from agent.plugins.static_manifest import load_static_plugin_manifest
         names = {load_static_plugin_manifest(path.parent).name for path in plugins.glob('*/plugin.py')}
-        config.write_text('[agent.plugins]\ndisabled_builtin = ' + json.dumps(sorted(names - {'channels', 'content', 'aa_marker'})) + '\n')
+        for name in sorted(names - {'channels', 'ledger', 'content', 'aa_marker'}):
+            set_plugin_choice(workspace, name, enabled=False)
     provider = PROVIDER
     fixtures = [('annotation', CONTRIBUTOR), ('peer', PEER)]
     if case in {'recovery', 'recovery-blocked'}:

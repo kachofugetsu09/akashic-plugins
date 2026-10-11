@@ -99,7 +99,7 @@ class SessionAdmissions:
             raise RuntimeError(f"session admission 不存在: {admission_id}")
 
     def clear_stale(self) -> None:
-        """在唯一 runtime 启动时清理上次异常退出遗留的处理租约。"""
+        """在旧代已排空后清理异常退出遗留的处理租约。"""
 
         with self._lock:
             _ = self._conn.execute("DELETE FROM session_admissions")

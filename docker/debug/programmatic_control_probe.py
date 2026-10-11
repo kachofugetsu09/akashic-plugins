@@ -4536,10 +4536,10 @@ def _write_config(
 ) -> None:
     """渲染只连接 compose 私网 model-gate 的隔离配置。"""
 
-    config = f"""[agent.plugins]
-disabled_builtin = ["subagent"]
-"""
-    (sandbox / "config.toml").write_text(config, encoding="utf-8")
+    (sandbox / "config.toml").write_text("[runtime]\n", encoding="utf-8")
+    from agent.plugins.bundles import set_plugin_choice
+
+    set_plugin_choice(sandbox / "workspace", "subagent", enabled=False)
     from agent.plugin_composition.config_input import save_config
 
     save_config(sandbox / "workspace/plugin-data/akashic_clients-builtin", {
