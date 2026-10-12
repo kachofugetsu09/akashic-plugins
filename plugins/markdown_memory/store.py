@@ -88,6 +88,14 @@ class MarkdownProfileStore:
             names += [f"{TOPICS}/{folder}/{path.name}" for path in sorted((self.root / TOPICS / folder).glob("*.md"))]
         return Workspace({name: self.read(name) for name in names}, folders, scope)
 
+    # 注入视图：可写工作区之外，再给出其他文件夹的说明。
+    def view(self, scope: str | None) -> tuple[Workspace, dict[str, str]]:
+        workspace = self.workspace(scope)
+        current = workspace.folder()
+        others = {name: split_frontmatter(self.read(f"{TOPICS}/{name}/{SCOPE_FILE}"))[0].get("description", "")
+                  for name in workspace.folders if name != current}
+        return workspace, others
+
     def read_writes(
         self, after: tuple[str, str] | None, limit: int,
     ) -> tuple[dict[str, object], ...]:

@@ -52,7 +52,7 @@ from plugins.runtime_inspection.contract import DOCUMENTS, Document
 
 from .documents import (
     PROFILE, SELF, SELF_HEADINGS, PROFILE_HEADINGS, InvalidDraft, Op, Workspace,
-    check_changes, parse_ops, section_of,
+    check_changes, parse_ops, render_memory, section_of,
 )
 from .store import DEFAULT_SELF_MD, ConcurrentChange, MarkdownProfileStore
 from .contract import MEMORY_WRITES
@@ -283,18 +283,6 @@ def _profile_prompt(workspace: Workspace, source: str) -> str:
 """
 
 
-_Signature = tuple[tuple[int, int, int] | None, ...]
-
-
-# 档案文件的变更签名；缺失文件记为 None。
-def _stat_signature(path: Path) -> tuple[int, int, int] | None:
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return None
-    return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
-
-
 @asynccontextmanager
 async def profile_lock(path: Path, *, create: bool = True) -> AsyncGenerator[None]:
     """按文件名提供跨 Session 和 generation 的排他锁；取消等待不会遗留持锁线程。"""
@@ -486,36 +474,27 @@ async def apply(ctx: Context) -> None:
     _ = await ctx.provide(MEMORY_WRITES, read_writes)
     await ctx.inject((DOCUMENTS,), publish_documents, name="documents")
 
-    # 路径在组合边界解析一次；每步只比较 stat 签名，文件未变时复用上次材料。
-    state_files = tuple(ctx.workspace_file(name) for name in workspace_files
-                        if not name.endswith(".lock"))
-    self_path = ctx.workspace_file("memory/SELF.md")
-    profile_path = ctx.workspace_file("memory/PROFILE.md")
-    location = f"## 档案位置\n- 用户画像：{profile_path}\n- 自我认知：{self_path}"
-    cached: dict[_Signature, MaterialData] = {}
+    root = ctx.workspace_root("memory")
+    frozen: dict[tuple[str, str], MaterialData] = {}
 
     async def prepare(snapshot: tuple[Message, ...], source: str) -> MaterialData:
-        # 1. 完整初始态只投影 Store 的同一默认值；不创建文件或消费旧队列。
-        signature = await run_file_io(lambda: tuple(_stat_signature(path) for path in state_files))
-        if (hit := cached.get(signature)) is not None:
+        # 1. 快照按 会话 + 最新压缩摘要 冻结：同一压缩代内前缀稳定，agent 写入下一代才可见。
+        session = snapshot[-1].session_id if snapshot else ""
+        record = ctx.require(COMPACTION_SUMMARIES).head(session) if session else None
+        key = (session, "" if record is None else record.reference)
+        if (hit := frozen.get(key)) is not None:
             return hit
-        # 2. 签名变化时按原锁协议重读：两份档案由同一次更新写入，锁保证读到同一版本。
-        if all(item is None for item in signature):
-            self_profile, memory = DEFAULT_SELF_MD.strip(), ""
-        else:
-            async with profile_lock(lock_path, create=False):
-                self_profile, memory = await run_file_io(lambda: (
-                    self_path.read_text(encoding="utf-8").strip(),
-                    profile_path.read_text(encoding="utf-8").strip(),
-                ))
-        parts: list[str] = [location]
-        if self_profile:
-            parts.append("## Akashic 自我认知\n\n" + self_profile)
-        if memory:
-            parts.append("## 用户画像\n" + memory)
-        material: MaterialData = {"system_prompt": "\n\n".join(parts)}
-        cached.clear()
-        cached[signature] = material
+        if store is None:
+            return {"system_prompt": render_memory(str(root), Workspace({SELF: DEFAULT_SELF_MD}, {}, None), {})}
+        # 2. 在文件锁内读取，后台叠加只会被看到完整的前后两版之一。
+        scope = _scope_key(ctx.require(MESSAGE_CATALOG).reader(session)) if session else None
+        current = store
+        async with profile_lock(lock_path, create=False):
+            workspace, others = await run_file_io(lambda: current.view(scope))
+        material: MaterialData = {"system_prompt": render_memory(str(root), workspace, others)}
+        frozen[key] = material
+        while len(frozen) > 64:
+            del frozen[next(iter(frozen))]
         return material
 
     async def follow(catalog: MessageCatalog) -> None:

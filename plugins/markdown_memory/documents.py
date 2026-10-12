@@ -273,3 +273,73 @@ def _check_budget(doc: str, old: str, text: str, profile_budget: int, self_budge
     for heading, budget in self_budgets.items():
         if after.get(heading, 0) > budget and after.get(heading, 0) > before.get(heading, 0):
             raise InvalidDraft(f"SELF.md {heading} 超出 {budget} 字配额：用 supersede 合并旧条目")
+
+
+PINNED_CHARS = 4000
+
+
+# 常驻记忆：使用规则、两份档案、当前 scope 与全局主题的 pinned 全文和自动索引、其他文件夹清单。
+def render_memory(root: str, workspace: Workspace, others: Mapping[str, str]) -> str:
+    folder = workspace.folder()
+    parts = [_usage(root, workspace.scope, folder)]
+    for title, doc in (("Akashic 自我认知", SELF), ("用户画像", PROFILE)):
+        if text := workspace.texts.get(doc, "").strip():
+            parts.append(f"## {title}（{doc}）\n\n{text}")
+    if folder is not None:
+        parts.append(f"## 当前项目记忆（{TOPICS}/{folder}/）\n\n"
+                     + (_topics(workspace.texts, f"{TOPICS}/{folder}/") or "（暂无主题）"))
+    if global_topics := _topics(workspace.texts, f"{TOPICS}/"):
+        parts.append(f"## 全局主题（{TOPICS}/）\n\n{global_topics}")
+    if others:
+        names = "；".join(f"{name}：{description}" for name, description in sorted(others.items())[:20])
+        parts.append(f"## 其他项目记忆（未加载，需要时用 rg 搜索）\n{len(others)} 个文件夹：{names}")
+    return "\n\n".join(parts)
+
+
+def _topics(texts: Mapping[str, str], prefix: str) -> str:
+    pinned: list[str] = []
+    index: list[str] = []
+    budget = PINNED_CHARS
+    for doc in sorted(texts):
+        rest = doc.removeprefix(prefix)
+        if not doc.startswith(prefix) or "/" in rest or rest == SCOPE_FILE:
+            continue
+        fields, body = split_frontmatter(texts[doc])
+        content = "\n".join(body).strip()
+        description = fields.get("description") or "（无 description）"
+        if fields.get("pinned", "").lower() == "true" and content and budget > 0:
+            # 配额只计正文；截断提示另附，剩余额度不会为负。
+            shown = content[:budget]
+            budget -= len(shown)
+            if len(shown) < len(content):
+                shown += f"\n（已截断：pinned 正文超过 {PINNED_CHARS} 字配额，完整内容用 read_file 读取，或精简、取消 pinned）"
+            pinned.append(f"### {doc}\n{shown}")
+        elif fields.get("pinned", "").lower() == "true" and content:
+            index.append(f"- {doc} — {description}（pinned，但配额已用尽，未展开）")
+        else:
+            index.append(f"- {doc} — {description}")
+    return "\n\n".join([*pinned, *(["索引：\n" + "\n".join(index)] if index else [])])
+
+
+def _usage(root: str, scope: str | None, folder: str | None) -> str:
+    if scope is None:
+        where = "当前会话不属于任何项目：项目相关内容写进全局主题。"
+    elif folder is None:
+        where = (f"当前项目（scope {scope}）还没有记忆文件夹：需要时自取一个名字，先写 "
+                 f"{TOPICS}/<名字>/{SCOPE_FILE}，内容为 `---` / `scope: {scope}` / `description: 一句话` / `---`。")
+    else:
+        where = f"当前项目文件夹是 {TOPICS}/{folder}/。"
+    return f"""## 长期记忆
+
+记忆目录：{root}。下面是会话开始（或上次上下文压缩）时的快照；你之后写入的内容已经生效，只是不会出现在这里。
+
+读：这里只有档案、pinned 主题和索引。需要某个主题时用 read_file 读完整文件；找不到或要看其他项目时，用 shell 在记忆目录执行 rg。记忆可能过时：涉及路径、版本、配置和当前状态的条目，先对照实际文件或命令核实再依赖。
+
+写：直接用 write_file / edit_file 编辑文件。用户要求记住时立即写；要求忘记时删除对应条目。后台也会在上下文压缩后自动提炼，不必为了保险重复写。
+- 用户本人的身份、偏好、明确要求 → PROFILE.md 对应标题下。
+- 用户对你工作方式的纠正或确认 → 跨项目适用的写全局主题，只对本项目适用的写项目文件夹；写明原因。
+- 项目的约定、决策、背景与外部资源位置 → 项目文件夹的主题文件。{where}
+- 已有的记忆文件只用 edit_file 修改或追加，write_file 只用来新建文件，避免整文件覆盖掉后台刚写入的条目。
+- 每条是一行 `- ` 文本；新主题文件以 `---` / `description: 一句话` / `---` 开头；先更新已有主题和条目，不追加相互矛盾的条目。
+- 在 frontmatter 加 `pinned: true` 会让该主题常驻，只用于每次都需要的少量内容。
+- 不要保存：能从仓库、配置或命令直接读到的内容，临时任务状态，调试步骤，git 历史。"""
