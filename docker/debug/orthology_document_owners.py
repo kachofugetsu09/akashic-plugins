@@ -21,8 +21,9 @@ from plugins.runtime_inspection import plugin as inspection
 async def check(workspace: Path) -> None:
     root = CompositionRoot("document-owner-scenario")
     log = MessageLog(workspace / "sessions.db")
-    def runtime(name, files=(), config=None):
-        return PluginRuntime(name, name, workspace, workspace / name, workspace, config or {}, workspace_files=files)
+    def runtime(name, files=(), config=None, roots=()):
+        return PluginRuntime(name, name, workspace, workspace / name, workspace, config or {},
+                             workspace_roots=roots, workspace_files=files)
     try:
         await root.mount(context.apply, name="context", runtime=runtime("context", config={
             "prompt_sources": {"default_prompt": "prompt", "markdown_memory": "markdown_memory"},
@@ -34,25 +35,26 @@ async def check(workspace: Path) -> None:
         persona = await root.mount(prompt.apply, name="prompt", inject=prompt.inject,
                                    runtime=runtime("prompt", prompt.workspace_files))
         profiles = await root.mount(memory.apply, name="memory", inject=memory.inject,
-                                    runtime=runtime("markdown_memory", memory.workspace_files))
+                                    runtime=runtime("markdown_memory", memory.workspace_files,
+                                                    roots=memory.workspace_roots))
         assert persona.state is FiberState.ACTIVE and profiles.state is FiberState.ACTIVE
         observer = await root.mount(inspection.apply, name="inspection", runtime=runtime("inspection"))
         documents = root.context.require(DOCUMENTS)
-        assert [row["id"] for row in documents.list_documents()] == ["memory", "self", "veda"]
-        path = workspace / "memory/MEMORY.md"
-        path.rename(workspace / "original-memory.md")
-        assert documents.get_document("memory")["unavailable"]["code"] == "document_unavailable"
+        assert [row["id"] for row in documents.list_documents()] == ["profile", "self", "veda"]
+        path = workspace / "memory/PROFILE.md"
+        path.rename(workspace / "original-profile.md")
+        assert documents.get_document("profile")["unavailable"]["code"] == "document_unavailable"
         assert documents.get_document("veda")["markdown"]
-        path = workspace / "memory/MEMORY.md"
+        path = workspace / "memory/PROFILE.md"
         path.write_text("owner text\n")
-        assert documents.get_document("memory")["markdown"] == "owner text\n"
+        assert documents.get_document("profile")["markdown"] == "owner text\n"
         path.write_bytes(b"\xff")
-        assert documents.get_document("memory")["unavailable"]["code"] == "document_invalid_utf8"
+        assert documents.get_document("profile")["unavailable"]["code"] == "document_invalid_utf8"
         path.write_bytes(b"x" * (192 * 1024 + 1))
-        assert documents.get_document("memory")["unavailable"]["code"] == "document_too_large"
+        assert documents.get_document("profile")["unavailable"]["code"] == "document_too_large"
         before = path.read_bytes()
         await profiles.dispose()
-        assert documents.get_document("memory") is None and path.read_bytes() == before
+        assert documents.get_document("profile") is None and path.read_bytes() == before
         assert [row["id"] for row in documents.list_documents()] == ["veda"]
 
         # 新增异名 owner 不修改诊断目录源码；每次读取都经过其入口。
