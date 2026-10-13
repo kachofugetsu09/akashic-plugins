@@ -2,6 +2,8 @@
 
 本基准从首页经过真实插件目录、聊天 iframe、历史 API 和 WebSocket，测量高延迟链路上的启动依赖。它运行完整本地 Runtime，使用一次性配置、插件副本和 100 条固定消息；不配置模型或外部账号，不发送消息。因此“可用”指历史可读、草稿可编辑且已收到实时数据，不代表模型回复完成。
 
+已完成的基线、逐项爬坡与复核数据见 [STARTUP_RESULTS.md](STARTUP_RESULTS.md)。
+
 ```text
 生产构建 → 隔离 Runtime / Web Shell → Chromium 网络与 CPU 限速
                                        ├─ 冷缓存首次进入
@@ -73,6 +75,18 @@ for path in Path("/absolute/benchmark-state/plugins/ui/static/dashboard").rglob(
     if path.is_file():
         os.utime(path, (1767225600, 1767225600))
 ```
+
+## 网络故障验证
+
+优化候选还需单独运行网络故障验证；它使用请求 gate 和一次 503，不参与性能采样：
+
+```bash
+node scripts/webui-performance/verify-startup-network.mjs \
+  --url http://127.0.0.1:24139 --browser /absolute/path/to/chromium \
+  --output /absolute/results/network
+```
+
+该检查阻塞真实 runtime 下载，确认 SDK 预取不会提前执行；随后验证首次 bootstrap 失败后的原页重试、单个聊天实例、历史正文与草稿输入。
 
 ## 方案依据
 

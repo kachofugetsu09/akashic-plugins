@@ -590,16 +590,22 @@ function activationOrder(modules: WebModulePayload[]): WebModulePayload[] {
 }
 
 export async function startWebHost(host: HTMLElement): Promise<WebHostSession> {
-  const runtime = await import("./design/runtime");
-  runtime.exposeRuntime();
+  const preloads = preloadHostModules();
+  // 运行时下载与目录读取彼此独立；插件执行仍等共享运行时发布完成。
+  const runtimeReady = import("./design/runtime").then((runtime) => runtime.exposeRuntime());
   const open = async (): Promise<BrowserCatalogSession> => {
-    const response = await fetch("/api/chat/web-ui/bootstrap", {headers: {Accept: "application/json"}, cache: "no-cache"});
+    const [, response] = await Promise.all([
+      runtimeReady,
+      fetch("/api/chat/web-ui/bootstrap", {headers: {Accept: "application/json"}, cache: "no-cache"}),
+    ]);
     if (!response.ok) throw new Error(`界面目录暂时不可用（${response.status}）`);
     const next = new BrowserCatalogSession(parseBootstrap(await response.json()));
     try { await next.activateModules(); return next; }
     catch (error) { next.close(); throw error; }
   };
-  let session = await open();
+  let session: BrowserCatalogSession;
+  try { session = await open(); }
+  finally { for (const link of preloads) link.remove(); }
   session.renderRoot(host);
   host.dataset.akashicCatalog = session.bootstrap.catalogId;
   let closed = false;
@@ -661,6 +667,21 @@ export async function startWebHost(host: HTMLElement): Promise<WebHostSession> {
     document.removeEventListener("visibilitychange", focus);
     session.close();
   })};
+}
+
+/** 提前下载 Host SDK；modulepreload 不执行读取共享 runtime 的模块正文。 */
+function preloadHostModules(): HTMLLinkElement[] {
+  // URL 只由页面的 import map 拥有，避免再维护一份 SDK 路径表。
+  const map = document.querySelector<HTMLScriptElement>('script[type="importmap"]');
+  if (!map) throw new Error("Web Host import map is missing");
+  const { imports } = JSON.parse(map.text) as { imports: Record<string, string> };
+  return Object.values(imports).map((href) => {
+    const link = document.createElement("link");
+    link.rel = "modulepreload";
+    link.href = href;
+    document.head.appendChild(link);
+    return link;
+  });
 }
 
 function parseBootstrap(value: unknown): WebUiBootstrap {
