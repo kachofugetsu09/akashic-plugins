@@ -345,12 +345,14 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
   const anchorIndexes = useMemo(() => timelineAnchorIndexes(messages, groups), [messages, groups]);
   const onNavigate = useCallback((id: string, partIndex?: number) => {
     stopScroll();
-    const index = anchorIndexes.get(id);
+    const processOwner = partIndex === undefined ? undefined : [...groups.inline.leading].find(
+      ([, members]) => members.some(message => message.id === id))?.[0];
+    const index = anchorIndexes.get(processOwner ?? id);
     const activity = index === undefined ? undefined : activities[index - visibleMessages.length];
     const row = messageElementsRef.current.get(visibleMessages[index ?? -1]?.id)
       ?? (activity ? document.querySelector<HTMLElement>(`[data-reply-handle="${CSS.escape(activity.handle)}"]`) : null);
     if (row) focusMessagePart(row, id, partIndex);
-  }, [activities, anchorIndexes, messageElementsRef, stopScroll, visibleMessages]);
+  }, [activities, anchorIndexes, groups.inline.leading, messageElementsRef, stopScroll, visibleMessages]);
   return <>{visibleMessages.map((message) => <React.Fragment key={message.id}>
     {dayBreaks.has(message.id) ? <DaySeparator label={dayBreaks.get(message.id)!} /> : null}
     <div
@@ -361,6 +363,7 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
       else messageElementsRef.current.delete(message.id);
     }}>
     <TimelineMessageView message={message} hideBody={groups.hiddenBodies.has(message.id) || groups.moved.has(message.id)} processMessages={groups.completed.get(message.id)}
+      inlineReply={groups.inline.outputs.has(message.id)} leadingProcess={groups.inline.leading.get(message.id)}
       hideProcess={groups.moved.has(message.id)} lookupMessage={lookupMessage} toolResults={toolResults} onNavigate={onNavigate} onError={onError}
       beforeReasoning={(origin) => needsBeforeReasoningFallback(origin, inputStarts) ? <PluginUiSlot name="turn.before_reasoning"
         sessionId={origin.session_id} messageId={origin.id} block={{ source: origin.source }}
@@ -369,7 +372,7 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
         name="turn.before_tool" sessionId={origin.session_id} messageId={origin.id} block={{ ...part, message_id: origin.id, part_index: index }} /> : null}
       afterBody={message.body.kind === "output" && message.body.finish === "complete" ? <PluginUiSlot
         name="turn.after_answer" sessionId={message.session_id} messageId={message.id} /> : undefined} />
-    {!groups.hiddenBodies.has(message.id) && !groups.moved.has(message.id) ? <div className={`shared-message-meta timeline-meta ${message.body.kind === "input" ? "user" : "assistant"}`}>
+    {!groups.hiddenBodies.has(message.id) && !groups.moved.has(message.id) && !groups.joined.has(message.id) ? <div className={`shared-message-meta timeline-meta ${message.body.kind === "input" ? "user" : "assistant"}`}>
       <time dateTime={message.timestamp}>{formatMessageTime(message.timestamp)}</time>
       <SharedMessageActions
         canReply={status === "idle" && (message.body.kind === "input" || message.body.kind === "output")}

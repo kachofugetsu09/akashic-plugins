@@ -11,6 +11,7 @@ export interface ThemeDefinition {
   colorScheme: ThemeColorScheme;
   material: Record<MaterialColorRole, string>;
   domain: Record<DomainColorRole, string>;
+  chart: Record<ChartColorRole, string>;
 }
 
 export interface ThemeSelection {
@@ -37,6 +38,9 @@ const DOMAIN_COLOR_ROLES = [
   "trace", "onTrace", "traceContainer", "onTraceContainer",
   "info", "onInfo", "infoContainer", "onInfoContainer",
 ] as const;
+
+const CHART_COLOR_ROLES = ["1", "2", "3", "4", "5", "6"] as const;
+export type ChartColorRole = (typeof CHART_COLOR_ROLES)[number];
 
 export type MaterialColorRole = (typeof MATERIAL_COLOR_ROLES)[number];
 export type DomainColorRole = (typeof DOMAIN_COLOR_ROLES)[number];
@@ -110,6 +114,7 @@ function validateCatalog(value: unknown): { defaultThemeId: string; themes: Them
       colorScheme: theme.colorScheme,
       material,
       domain,
+      chart: validateColorGroup(theme, "chart", CHART_COLOR_ROLES),
     } as ThemeDefinition;
   });
 
@@ -125,7 +130,7 @@ function validateCatalog(value: unknown): { defaultThemeId: string; themes: Them
 
 function validateColorGroup<Role extends string>(
   theme: Record<string, unknown>,
-  groupName: "material" | "domain",
+  groupName: "material" | "domain" | "chart",
   roles: readonly Role[],
 ): Record<Role, string> {
   const rawGroup = theme[groupName];
@@ -160,6 +165,7 @@ function rgbChannels(value: string): string {
 function themeCss(): string {
   return CATALOG.themes.map((theme) => {
     const declarations = MATERIAL_COLOR_ROLES.flatMap((role) => colorDeclarations("md-sys-color", role, theme.material[role]));
+    declarations.push(...CHART_COLOR_ROLES.map((role) => `--ak-chart-${role}:${theme.chart[role]}`));
     declarations.push(...DOMAIN_COLOR_ROLES.flatMap((role) => colorDeclarations("ak-sys-color", role, theme.domain[role])));
     for (const [legacyRole, [group, role]] of Object.entries(LEGACY_COLOR_ALIASES)) {
       const value = group === "material"

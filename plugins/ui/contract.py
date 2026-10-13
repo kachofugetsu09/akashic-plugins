@@ -109,6 +109,7 @@ PluginUiSlot = Literal[
     "turn.before_tool",
     "turn.after_answer",
     "drawer.panel",
+    "message.attachment",
 ]
 
 PLUGIN_UI_SLOTS = frozenset(
@@ -117,6 +118,7 @@ PLUGIN_UI_SLOTS = frozenset(
         "turn.before_tool",
         "turn.after_answer",
         "drawer.panel",
+        "message.attachment",
     }
 )
 

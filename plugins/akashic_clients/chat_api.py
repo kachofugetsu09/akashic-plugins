@@ -72,6 +72,7 @@ class WebPluginUiQueryPayload(BaseModel):
         "turn.before_tool",
         "turn.after_answer",
         "drawer.panel",
+        "message.attachment",
     ]
     session_id: str | None = Field(default=None, max_length=512)
     turn_id: str | None = Field(default=None, max_length=128)
