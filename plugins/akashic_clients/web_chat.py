@@ -215,6 +215,7 @@ class WebChatChannel:
         self._reply_status: Callable[[str], AsyncGenerator[dict[str, object], None]] | None = None
         self._session_activity: Callable[[], AsyncGenerator[dict[str, object], None]] | None = None
         self._message_display: MessageDisplayReader | None = None
+        self._jobs: Callable[[str], AsyncGenerator[dict[str, object], None]] | None = None
         self._followers: dict[WebSocket, tuple[str, asyncio.Task[None]]] = {}
         self._stopping = False
         self._presentation_subscription: StreamSubscription | None = None
@@ -241,6 +242,7 @@ class WebChatChannel:
         scope: Callable[[], Any],
         *,
         reply_status: Callable[[str], AsyncGenerator[dict[str, object], None]] | None = None,
+        jobs: Callable[[str], AsyncGenerator[dict[str, object], None]] | None = None,
     ) -> None:
         """Bind a request scope factory instead of retaining a host provider."""
 
@@ -255,6 +257,10 @@ class WebChatChannel:
             if self._reply_status is not None and self._reply_status is not reply_status:
                 raise RuntimeError("Web reply status reader 不允许替换")
             self._reply_status = reply_status
+        if jobs is not None:
+            if self._jobs is not None and self._jobs != jobs:
+                raise RuntimeError("Web jobs reader 不允许替换")
+            self._jobs = jobs
 
     @asynccontextmanager
     async def _open_message_catalog(self) -> AsyncIterator[MessageCatalog]:
@@ -950,6 +956,9 @@ class WebChatChannel:
 
         async with asyncio.TaskGroup() as tasks:
             _ = tasks.create_task(send_messages())
+            # 后台任务镜像可选：jobs 插件缺席时不发帧，前端按空列表处理。
+            if self._jobs is not None:
+                _ = tasks.create_task(send("session.jobs", self._jobs(session_id)))
             if self._reply_status is None:
                 await websocket.send_json({"type": "reply.status", "version": 2,
                     "session_id": session_id, "snapshot_id": None, "available": False, "items": []})
