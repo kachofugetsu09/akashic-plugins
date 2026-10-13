@@ -21,6 +21,7 @@ import {
 } from "./web-projects";
 import { useNavigationPins } from "./use-navigation-pins";
 import { readSessionActivityFrame, useSessionActivity, type SessionHead } from "./use-session-activity";
+import { readJobsFrame, type JobView, type SessionJobs } from "./job-list-action";
 import { StreamProjectionStore } from "./stream-projection";
 import { canProjectWebStreamWithoutRoot, publishWebStreamChanges } from "./web-stream-projection";
 import { replyChatStatus, type ChatStatus } from "./web-chat-status";
@@ -62,6 +63,7 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 const DELETED_NOTICE_MS = 10_000;
 // 新鲜快照激活时不再重复拉尾页；超过窗口或实时跟随断档仍回到权威分页。
 const SESSION_TAIL_FRESH_MS = 30_000;
+const NO_JOBS: readonly JobView[] = [];
 
 function followSession(socket: WebSocket | null, sessionId: string, afterSeq: number): void {
   if (!sessionId || socket?.readyState !== WebSocket.OPEN) return;
@@ -97,6 +99,7 @@ export function useDesktopChatController() {
   const memoryInstalled = pluginCatalog.installed(MEMORY_PLUGIN);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [pendingSessionId, setPendingSessionId] = useState("");
+  const [sessionJobs, setSessionJobs] = useState<SessionJobs | null>(null);
   // 通知入口统一使用网页导航，会话参数在 chatReady 后消费一次。
   const [requestedSessionId, setRequestedSessionId] = useState(
     () => {
@@ -468,6 +471,7 @@ export function useDesktopChatController() {
   const closeConnection = useCallback(() => {
     // React 可立即重新挂载；先撤销旧连接，不能等异步 finalizer 才清引用。
     socketRef.current = null;
+    setSessionJobs(null);
     if (connectionTaskRef.current) Effect.runFork(Fiber.interrupt(connectionTaskRef.current));
     connectionTaskRef.current = null;
     disconnectSessionActivity();
@@ -496,6 +500,11 @@ export function useDesktopChatController() {
               const activity = readSessionActivityFrame(value);
               if (activity) {
                 receiveSessionActivity(activity);
+                return;
+              }
+              const jobs = readJobsFrame(value);
+              if (jobs) {
+                if (jobs.sessionId === activeSessionRef.current) setSessionJobs(jobs);
                 return;
               }
               const frame = readMessageLogFrame(value);
@@ -563,6 +572,8 @@ export function useDesktopChatController() {
         disconnectSessionActivity();
         setReplyActivities([]);
         setReplyAvailable(null);
+        // 任务镜像属于这一代连接：断线即失效，重连后的基线帧再装回；jobs 缺席时就保持为空。
+        setSessionJobs(null);
         setStatusLive(replyChatStatus([], messagesRef.current.length, [], false));
         if (event.code !== 1000 && event.code !== 1013) setConnectionError("连接已断开，正在重新连接…");
         yield* reconnect.next(undefined);
@@ -1036,6 +1047,7 @@ export function useDesktopChatController() {
   }, [closeConnection, connect, loadMessagesSafely, loadModels, loadSessionsSafely, reportError, setReplyAvailable, shellState?.chatReady]);
 
   return {
+    activeSessionJobs: sessionJobs?.sessionId === activeSessionId ? sessionJobs.jobs : NO_JOBS,
     surface, sidebarSessions, activeSessionId, pendingSessionId, chatReady, messages, timelineMessages, timelineRefresh, replyActivities, replyAvailable, status,
     streamStore, messageElementsRef, copiedMessageId, shellState, stopPending, modelState,
     canSend, modelProblem, modelsPhase, modelsError, retryModels, draftKey: activeSessionId || `new:${newChatProjectId}`,
