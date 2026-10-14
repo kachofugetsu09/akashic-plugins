@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from agent.plugin_composition import Context
 from plugins.runtime_diagnostics.contract import DIAGNOSTICS
+from plugins.ui.contract import UI
+from . import dashboard
 from .profiling import PROFILES, Profiles
 from .records import Records
 from .runtime import Monitor
@@ -23,3 +25,9 @@ async def apply(ctx: Context) -> None:
     await ctx.provide(DIAGNOSTICS, records)
     await ctx.provide(PROFILES, profiles)
     await ctx.spawn(monitor.run(), name="diagnostics-sampling")
+
+    async def register_ui(child: Context) -> None:
+        await child.require(UI).register(child, web="web_module.js", dashboard=lambda: dashboard,
+                                        requires=("shell.pages.v1",))
+
+    await ctx.inject((UI, DIAGNOSTICS, PROFILES), register_ui, name="diagnostics-ui")
