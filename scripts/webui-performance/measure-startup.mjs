@@ -37,12 +37,17 @@ const html = await fetch(values.url).then(r => {
 const entry = html.match(/<script[^>]*src="([^"]+)"/u)?.[1];
 if (!entry) throw new Error("首页缺少生产入口脚本");
 const entryBytes = await fetch(new URL(entry, values.url)).then(r => r.arrayBuffer());
+const chatHtml = await fetch(new URL('/chat', values.url)).then(r => r.text());
+const chatEntry = chatHtml.match(/<script[^>]*src="([^"]+)"/u)?.[1];
+if (!chatEntry) throw new Error("聊天页缺少生产入口脚本");
+const chatEntryBytes = await fetch(new URL(chatEntry, values.url)).then(r => r.arrayBuffer());
 const report = {
   schemaVersion: 1, label: values.label, sourceCommit: git("rev-parse", "HEAD"),
   sourceDiffSha256: hash(git("diff", "HEAD", "--", "frontend")),
   harnessSha256: hash(readFileSync(new URL(import.meta.url))),
   lockSha256: hash(readFileSync("package-lock.json")), bootstrapSha256: hash(bootstrap),
   entry, entrySha256: hash(Buffer.from(entryBytes)),
+  chatEntry, chatEntrySha256: hash(Buffer.from(chatEntryBytes)),
   moduleIds: JSON.parse(bootstrap).modules.map(m => m.pluginId),
   profiles, runCount, plannedSamples: selected.length * runCount * 2,
   viewport: { width: 412, height: 915 }, cpuRate: 4,
@@ -59,6 +64,19 @@ try {
       const context = await browser.newContext({ viewport: report.viewport, serviceWorkers: "block" });
       await context.addInitScript(() => {
         localStorage.setItem("akashic.onboarding.seen", "1");
+        window.__startupSockets = new Map();
+        const NativeSocket = window.WebSocket;
+        window.WebSocket = class extends NativeSocket {
+          constructor(...args) {
+            super(...args);
+            if (new URL(this.url).pathname !== "/ws") return;
+            window.__startupSockets.set(this, false);
+            this.addEventListener("message", event => {
+              if (JSON.parse(event.data).type === "reply.status") window.__startupSockets.set(this, true);
+            });
+            this.addEventListener("close", () => window.__startupSockets.delete(this));
+          }
+        };
         window.__startupLongTasks = [];
         new PerformanceObserver(list => window.__startupLongTasks.push(...list.getEntries().map(
           entry => ({ start: entry.startTime, duration: entry.duration }),
@@ -111,6 +129,13 @@ async function measurePage(page, context, profile, cache) {
   await cdp.send("Network.emulateNetworkConditions", { offline: false, ...profiles[profile] });
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: report.cpuRate });
   const errors = [], failures = [], sockets = [];
+  const requests = {}, sentFrames = {}, receivedFrames = {};
+  let liveSockets = 0, peakSockets = 0, receivedBytes = 0;
+  page.on("request", request => {
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}${url.search}`;
+    requests[key] = (requests[key] ?? 0) + 1;
+  });
   let confirmFollow;
   const following = new Promise(resolveFollow => { confirmFollow = resolveFollow; });
   let websocketDataAt = null;
@@ -119,8 +144,17 @@ async function measurePage(page, context, profile, cache) {
   page.on("websocket", socket => {
     if (new URL(socket.url()).pathname !== "/ws") return;
     sockets.push(socket);
+    liveSockets += 1;
+    peakSockets = Math.max(peakSockets, liveSockets);
+    socket.on("close", () => { liveSockets -= 1; });
+    socket.on("framesent", ({ payload }) => {
+      const frame = JSON.parse(String(payload));
+      sentFrames[frame.type] = (sentFrames[frame.type] ?? 0) + 1;
+    });
     socket.on("framereceived", ({ payload }) => {
       const frame = JSON.parse(String(payload));
+      receivedBytes += Buffer.byteLength(payload);
+      receivedFrames[frame.type] = (receivedFrames[frame.type] ?? 0) + 1;
       if (frame.type === "error") errors.push(`WebSocket: ${frame.message}`);
       if (frame.type === "session.following" && frame.session_id === "akashic:startup-benchmark") {
         websocketDataAt ??= performance.now();
@@ -165,11 +199,52 @@ async function measurePage(page, context, profile, cache) {
     .map(p => f.timeOrigin + p.start - frames[0].timeOrigin));
   const fcpMs = paints.length ? Math.min(...paints) : null;
   const transferBytes = frames.reduce((sum, f) => sum + f.resources.reduce((n, r) => n + r.bytes, 0), 0);
+  const socketsAtReady = sockets.length;
   // 热缓存从一次完整字体加载后的访问开始；截图不计入可用耗时。
   for (const frame of page.frames()) await frame.waitForFunction(() => document.fonts.status === "loaded");
+  let health = null;
+  try {
+    const chat = page.frames().find(frame => new URL(frame.url()).pathname === "/chat");
+    if (!chat) throw new Error("聊天 frame 已丢失");
+    health = await chat.evaluate(async () => {
+      const started = performance.now(), deadline = started + 10000;
+      let probes = 0;
+      // 在浏览器同一事件循环内选择和探测，避免 Node 检查后连接恰好被界面重新创建。
+      while (performance.now() < deadline) {
+        const socket = [...window.__startupSockets].find(([item, reply]) => reply && item.readyState === WebSocket.OPEN)?.[0];
+        if (window.__startupSockets.size !== 1 || !socket) {
+          await new Promise(done => setTimeout(done, 25));
+          continue;
+        }
+        probes += 1;
+        const alive = await new Promise(done => {
+          const timer = setTimeout(() => finish(false), Math.min(5000, deadline - performance.now()));
+          function finish(value) {
+            clearTimeout(timer);
+            socket.removeEventListener("message", receive);
+            socket.removeEventListener("close", closed);
+            done(value);
+          }
+          function receive(event) {
+            const frame = JSON.parse(event.data);
+            if (frame.type === "pong" && frame.request_id === "startup-health") finish(true);
+          }
+          function closed() { finish(false); }
+          socket.addEventListener("message", receive);
+          socket.addEventListener("close", closed);
+          socket.send(JSON.stringify({ type: "ping", request_id: "startup-health" }));
+        });
+        if (alive) return { probes, ms: performance.now() - started };
+      }
+      throw new Error("稳定阶段未恢复单条连接、回复状态与 ping");
+    });
+    if (errors.length) throw new Error(errors.join("; "));
+  } catch (reason) { error = String(reason); }
   const suffix = error === null ? "" : "-failed";
   await page.screenshot({ path: resolve(output, `${profile}-${cache}-${report.runs.length}${suffix}.png`) });
+  const socketsBeforeClose = liveSockets;
   return { success: error === null, readyMs, fcpMs, transferBytes, error, errors, failures,
     websocketDataMs: websocketDataAt === null ? null : websocketDataAt - started,
-    sockets: sockets.length, frames };
+    sockets: sockets.length, socketsAtReady, peakSockets, socketsBeforeClose,
+    requests, sentFrames, receivedFrames, receivedBytes, health, frames };
 }
