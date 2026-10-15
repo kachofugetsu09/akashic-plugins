@@ -66,6 +66,9 @@ export type PromptInputProps = Omit<
   multiple?: boolean;
   /** 附件归属（会话草稿键）；变化时当前附件存到旧键名下，换出新键的那一份。 */
   attachmentKey?: string;
+  /** 单个附件上限（字节）；超出的文件不入列，交给 onRejectFiles 提示。 */
+  maxFileSize?: number;
+  onRejectFiles?: (files: File[]) => void;
   /** 可返回剩余草稿此后归属的键（新会话首次被接纳时拿到的会话 ID），未发出的附件随之迁过去。 */
   onSubmit: (
     message: PromptInputMessage,
@@ -78,6 +81,8 @@ export const PromptInput = ({
   className,
   multiple,
   attachmentKey = "",
+  maxFileSize,
+  onRejectFiles,
   onSubmit,
   children,
   ...props
@@ -125,7 +130,11 @@ export const PromptInput = ({
   // 2. 选择、粘贴和拖拽共用同一条附件入列路径。
   const add = useCallback(
     (fileList: File[] | FileList) => {
-      const incoming = Array.from(fileList);
+      // 超限文件在选择时就拒掉：等到发送才被服务端 413，用户已经写完话、还会被引导去"重试"一个必然失败的上传。
+      const all = Array.from(fileList);
+      const incoming = maxFileSize === undefined ? all : all.filter((file) => file.size <= maxFileSize);
+      if (incoming.length < all.length) onRejectFiles?.(all.filter((file) => !incoming.includes(file)));
+      if (!incoming.length) return;
       setFiles((prev) => {
         const next: (FileUIPart & { id: string })[] = [];
         for (const file of incoming) {
@@ -140,7 +149,7 @@ export const PromptInput = ({
         return [...prev, ...next];
       });
     },
-    []
+    [maxFileSize, onRejectFiles]
   );
 
   // 发送成功时本次附件可能已随切换会话存到别处，两边一起移除。

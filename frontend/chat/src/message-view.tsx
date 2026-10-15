@@ -5,6 +5,7 @@ import {
   AttachmentHoverCard,
   AttachmentHoverCardContent,
   AttachmentHoverCardTrigger,
+  AttachmentFileBody,
   AttachmentPreview,
   Attachments,
   getAttachmentLabel,
@@ -27,7 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Brain, Check, ChevronDown, Copy, Download, Gauge, ImageIcon, Wrench } from "lucide-react";
+import { Brain, Check, ChevronDown, Copy, Download, Gauge, ImageIcon, Play, Video, Wrench } from "lucide-react";
 import {
   Fragment,
   lazy,
@@ -553,11 +554,18 @@ export function TimelineMessageView({ message, lookupMessage, toolResults, onNav
       sessionId={message.session_id} messageId={message.id} fallback={fallback} />;
     return <MessageAttachmentItem attachment={{ id: ref.artifact_id, type: "file",
       filename: ref.filename ?? "附件", mediaType: ref.media_type ?? "application/octet-stream",
-      url: `/api/chat/artifacts/${encodeURIComponent(ref.artifact_id)}` }} />;
+      url: `/api/chat/artifacts/${encodeURIComponent(ref.artifact_id)}`, sizeBytes: ref.size_bytes }} />;
   };
+  // 与实时消息同一个容器（间距、顶对齐）；用户消息附件在正文上方，发出时与刷新后位置一致。
+  const looseAttachments = message.attachments.filter((ref) => !referencedArtifacts.has(ref.artifact_id));
+  // 工具结果插图沿正文宽度展示，不进缩略图容器；组件自带的 ml-auto/w-fit 会把附件推到右侧，这里显式去掉。
+  const looseItems = looseAttachments.map((ref, index) => <Fragment key={`${ref.artifact_id}:${index}`}>{attachment(ref.artifact_id)}</Fragment>);
+  const attachmentList = !looseAttachments.length ? null : attachmentResult ? looseItems
+    : <Attachments className="message-attachments ml-0 w-auto" variant="grid">{looseItems}</Attachments>;
   return <div className={`message-row timeline-message timeline-${body.kind}`}>
     <div className={body.kind === "input" ? "user-bubble" : "agent-content"}>
       {leadingContent}
+      {body.kind === "input" ? attachmentList : null}
       {leadingProcess ? <InlineReplyProcess messages={leadingProcess} toolResults={toolResults}
         beforeReasoning={beforeReasoning} beforePart={beforePart} /> : null}
       {hasFlow ? <SettledTurnFlow flow={flow} startedAt={turnStartedAt} endedAt={message.timestamp}
@@ -587,8 +595,7 @@ export function TimelineMessageView({ message, lookupMessage, toolResults, onNav
         </div> : null)}</UserTextClamp>
       </>}
       {afterBody}
-      {message.attachments.filter((ref) => !referencedArtifacts.has(ref.artifact_id)).map((ref, index) =>
-        <Fragment key={`${ref.artifact_id}:${index}`}>{attachment(ref.artifact_id)}</Fragment>)}
+      {body.kind === "input" ? null : attachmentList}
     </div>
   </div>;
 }
@@ -744,7 +751,7 @@ const outcomeLabels = { success: "成功", denied: "已拒绝", error: "失败",
 
 const MessageAttachments = memo(function MessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
   return (
-    <Attachments className="message-attachments" variant="grid">
+    <Attachments className="message-attachments ml-0 w-auto" variant="grid">
       {attachments.map((attachment) => (
         <MessageAttachmentItem attachment={attachment} key={attachment.id} />
       ))}
@@ -753,11 +760,14 @@ const MessageAttachments = memo(function MessageAttachments({ attachments }: { a
 });
 
 function MessageAttachmentItem({ attachment }: { attachment: MessageAttachment }) {
-  const isImage = getMediaCategory(attachment) === "image" && attachment.url;
+  const category = getMediaCategory(attachment);
   const label = getAttachmentLabel(attachment);
 
-  if (isImage) {
+  if (category === "image" && attachment.url) {
     return <MessageContentImage attachment={attachment} label={label} />;
+  }
+  if (category === "video" && attachment.url) {
+    return <MessageContentVideo url={attachment.url} label={label} />;
   }
 
   return (
@@ -765,8 +775,7 @@ function MessageAttachmentItem({ attachment }: { attachment: MessageAttachment }
       <AttachmentHoverCardTrigger asChild>
         <a className="message-attachment-download" href={attachment.url} download={label} aria-label={`下载 ${label}`}>
           <Attachment className="message-attachment-chip is-file" data={attachment}>
-            <AttachmentPreview />
-            <span>{label}</span>
+            <AttachmentFileBody name={label} sizeBytes={attachment.sizeBytes} />
           </Attachment>
         </a>
       </AttachmentHoverCardTrigger>
@@ -774,6 +783,28 @@ function MessageAttachmentItem({ attachment }: { attachment: MessageAttachment }
         <AttachmentHover attachment={attachment} />
       </AttachmentHoverCardContent>
     </AttachmentHoverCard>
+  );
+}
+
+// 视频与图片同一套：块里取首帧铺满（解不出时垫图标和文件名），点开在对话框里播放，而不是直接下载。
+function MessageContentVideo({ url, label }: { url: string; label: string }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className="message-attachment-chip is-media is-video" title={`播放 ${label}`} aria-label={`播放 ${label}`}>
+          <span className="message-video-fallback">
+            <Video size={18} aria-hidden="true" />
+            <span>{label}</span>
+          </span>
+          <video src={url} muted playsInline preload="metadata" />
+          <span className="message-video-badge" aria-hidden="true"><Play size={12} fill="currentColor" /></span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="image-preview-dialog">
+        <DialogTitle className="sr-only">{label}</DialogTitle>
+        <video className="image-preview-full" src={url} controls autoPlay playsInline />
+      </DialogContent>
+    </Dialog>
   );
 }
 

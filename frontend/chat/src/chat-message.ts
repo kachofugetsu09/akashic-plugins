@@ -23,6 +23,7 @@ export type AgentBlock = ThinkingBlock | ToolBlock;
 export type MessageAttachment = FileUIPart & {
   id: string;
   path?: string;
+  sizeBytes?: number;
 };
 
 export interface ChatMessage {

@@ -69,3 +69,25 @@ function alignNumericTableTokens(tokens: MarkdownToken[]) {
 export async function copyReadingCode(code: string) {
   await copyText(code);
 }
+
+/** 横滚块两侧哪边还藏着内容，写到 data-overflow（start / end），样式在对应边缘渐隐。 */
+export function writeOverflowEdges(target: HTMLElement, scroller: HTMLElement | null): void {
+  const start = scroller !== null && scroller.scrollLeft > 1;
+  const end = scroller !== null && scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
+  const next = [start ? "start" : "", end ? "end" : ""].filter(Boolean).join(" ");
+  if (target.dataset.overflow !== next) target.dataset.overflow = next;
+}
+
+/** 自身就是滚动容器的块（宽表）：滚动、容器或内容尺寸变化时重新判定，返回清理函数。 */
+export function watchOverflowEdges(scroller: HTMLElement): () => void {
+  const measure = () => writeOverflowEdges(scroller, scroller);
+  const resize = new ResizeObserver(measure);
+  resize.observe(scroller);
+  if (scroller.firstElementChild) resize.observe(scroller.firstElementChild);
+  scroller.addEventListener("scroll", measure, { passive: true });
+  measure();
+  return () => {
+    resize.disconnect();
+    scroller.removeEventListener("scroll", measure);
+  };
+}

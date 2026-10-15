@@ -1,7 +1,7 @@
 import { Clock3, Paperclip, Undo2 } from "lucide-react";
 import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
 import {
-  Attachment, AttachmentHoverCard, AttachmentHoverCardContent, AttachmentHoverCardTrigger,
+  Attachment, AttachmentFileBody, AttachmentHoverCard, AttachmentHoverCardContent, AttachmentHoverCardTrigger,
   AttachmentPreview, AttachmentRemove, Attachments, getAttachmentLabel, getMediaCategory,
 } from "@/components/ai-elements/attachments";
 import {
@@ -32,6 +32,8 @@ const FLOATING_LAYER = "[role='dialog'], [role='menu'], [role='listbox'], [data-
 
 // 自己在 document 上处理 Esc 的浮层：对话框、菜单、列表，以及标了 data-escape-layer 的非模态面板。
 const ESCAPE_LAYERS = "[role='dialog'], [role='menu'], [role='listbox'], [data-radix-popper-content-wrapper], [data-escape-layer]";
+// 与服务端单个上传上限（web_chat.MAX_UPLOAD_BYTES）一致。
+const MAX_ATTACHMENT_MB = 50;
 
 export const DesktopComposer = memo(function DesktopComposer({
   chatReady, canSend, modelProblem, draftKey, autoFocus = false, fresh = false, status, stopPending, stopCount, inputId, turnCompleted, modelState, selectedRuntimeId, selectedEffort, replyTarget,
@@ -154,12 +156,20 @@ export const DesktopComposer = memo(function DesktopComposer({
       throw error;
     }
   }, [canSend, modelProblem, expanded, onSend, setInput, setDraft, draftKey, moveQueue]);
-  const [queueRefused, setQueueRefused] = useState(false);
+  // 输入卡内一行轻提示（排队被拒、附件超限），自动消失；同一时间只有一条。
+  const [notice, setNotice] = useState<{ text: string; ms: number; title?: string } | null>(null);
   useEffect(() => {
-    if (!queueRefused) return;
-    const timer = window.setTimeout(() => setQueueRefused(false), 2400);
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), notice.ms);
     return () => window.clearTimeout(timer);
-  }, [queueRefused]);
+  }, [notice]);
+  const rejectFiles = useCallback((files: File[]) => {
+    const names = files.map((file) => file.name || "未命名");
+    // 过长的文件名中间省略：开头与带扩展名的结尾最能区分文件，完整名称放在 title 里。
+    const first = [...names[0]].length > 40 ? `${[...names[0]].slice(0, 20).join("")}…${[...names[0]].slice(-16).join("")}` : names[0];
+    const label = names.length > 1 ? `${first} 等 ${names.length} 个文件` : first;
+    setNotice({ text: `${label} 超过 ${MAX_ATTACHMENT_MB}MB，未添加`, ms: 4000, title: names.join("\n") });
+  }, []);
   const onComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const native = event.nativeEvent;
     // 生成中在输入框按 Esc 停止本轮（coding 工具的中断习惯）；输入法组合中的 Esc 属于输入法。
@@ -191,7 +201,7 @@ export const DesktopComposer = memo(function DesktopComposer({
     const text = input.trim();
     if (!turnBusy(status) || !text) return;
     event.preventDefault();
-    if (hasAttachments || replyTarget) return setQueueRefused(true);
+    if (hasAttachments || replyTarget) return setNotice({ text: "带附件或引用的消息，本轮结束后再发送", ms: 2400 });
     followUp.enqueue(text);
     setExpanded(false);
   };
@@ -213,8 +223,12 @@ export const DesktopComposer = memo(function DesktopComposer({
       className={`composer ${shellExpanded ? "is-expanded" : "is-compact"} ${input.trim() || replyTarget ? "has-text" : "empty"}${resting ? " is-resting" : ""}${fileDragActive ? " is-drop-target" : ""}`}
       multiple
       attachmentKey={draftKey}
+      maxFileSize={MAX_ATTACHMENT_MB * 1024 * 1024}
+      onRejectFiles={rejectFiles}
       data-draft-version={draftVersion}
       onSubmit={(message) => {
+        // 提示是关于这次输入的；发出后输入卡收成紧凑条，不该把上一条提示带进去。
+        setNotice(null);
         // 触屏发送后收起键盘、输入卡回到静止态：接下来是读回复，半屏键盘和展开的工具行只会挡住它。
         if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
           setEngaged(false);
@@ -245,7 +259,7 @@ export const DesktopComposer = memo(function DesktopComposer({
           <Undo2 size={18} aria-hidden="true" />
         </button>
       </div> : null}
-      {queueRefused ? <p className="composer-queue-refused" role="status">带附件或引用的消息，本轮结束后再发送</p> : null}
+      {notice ? <p className="composer-queue-refused" role="status" title={notice.title}>{notice.text}</p> : null}
       {fileDragActive ? <div className="composer-drop-hint" aria-hidden="true">松开以添加文件</div> : null}
       <PromptInputBody>
         <ComposerAttachments onPresenceChange={setHasAttachments} />
@@ -458,7 +472,7 @@ function ComposerAttachments({ onPresenceChange }: { onPresenceChange: (hasAttac
                   </div>
                   <AttachmentRemove className="attachment-remove-inline" />
                 </div>
-                {isMedia ? null : <span>{getAttachmentLabel(attachment)}</span>}
+                {isMedia ? null : <AttachmentFileBody name={getAttachmentLabel(attachment)} />}
               </Attachment>
             </AttachmentHoverCardTrigger>
             <AttachmentHoverCardContent>

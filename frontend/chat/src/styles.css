@@ -38,6 +38,12 @@ input {
   font: inherit;
 }
 
+/* 等宽字体（JetBrains Mono）默认开上下文连字，>= != -> 会画成 ≥ ≠ →，看到的和复制出来的不一样。
+   聊天里读代码以字面为准，所有等宽场景关掉连字；高亮组件在 shadow DOM 里，靠宿主继承。 */
+:where(code, pre, kbd, samp, diffs-container, .font-mono) {
+  font-variant-ligatures: none;
+}
+
 .webui-entry-loading {
   display: grid;
   width: 100%;
@@ -1165,6 +1171,8 @@ input {
 /* 带附件或引用时回车不排队：输入卡内一行轻提示，自动消失。 */
 .composer .composer-queue-refused {
   margin: 0;
+  /* 提示里可能带外部文件名（超限附件），长名任意处断行，不被输入卡裁掉。 */
+  overflow-wrap: anywhere;
   padding: 4px 0 0;
   color: var(--chat-muted);
   font-size: 0.8125rem;
@@ -2821,6 +2829,16 @@ form.composer:focus-within [data-slot="input-group"] {
     min-width: 0;
   }
 
+  /* 窄屏输入卡没有横向内边距：轻提示与正文同一左缘。 */
+  .chat-main .composer .composer-queue-refused { padding-inline: 16px 12px; }
+
+  /* 窄屏输入卡没有横向内边距，宽屏那套 -10px 外扩会让引用条左贴边框、右侧留缝；改为四周等距内嵌，圆角跟卡片同心，抵掉一半纵向 gap。 */
+  .chat-main .composer:is(.is-compact, .is-expanded) [data-slot="input-group"] > .composer-reply {
+    width: auto;
+    margin: -6px 4px -4px;
+    border-radius: 18px 18px 12px 12px;
+  }
+
   .chat-main .composer.is-compact textarea,
   .chat-main .composer.is-compact .composer__textarea,
   .chat-main .composer.is-expanded textarea,
@@ -3040,6 +3058,15 @@ form.composer:focus-within [data-slot="input-group"] {
   .chat-main .conversation-content { padding-block-end: 1rem; }
   /* 回到底部按钮同理贴消息区底部：再叠加输入卡高度与增高量，会被推出只有 60dvh 的消息区。 */
   .chat-main .desktop-scroll-return { bottom: 12px; }
+  /* 键盘弹起后（安卓按 resizes-content 缩小视口）整屏只剩 400px 上下：引用、附件、长草稿叠在一起不能把正文框挤出屏幕。 */
+  .chat-main .composer-attachments { padding-block-end: 4px; }
+  .chat-main .composer-attachments .attachment-chip.is-media { --chat-chip-size: 56px; }
+  /* 文件块不能只缩外壳：改成 56px 高的横条，文件名两行，扩展名与大小让位，右侧留出移除钮。 */
+  .chat-main .composer-attachments .attachment-chip.is-file { width: 9rem; height: 56px; padding: 6px 30px 6px 8px; }
+  .chat-main .composer-attachments .attachment-chip.is-file .attachment-file-name { -webkit-line-clamp: 2; }
+  .chat-main .composer-attachments .attachment-chip.is-file :is(.attachment-file-ext, .attachment-file-ext-icon, .attachment-file-size) { display: none; }
+  .chat-main .composer.is-expanded textarea,
+  .chat-main .composer.is-expanded .composer__textarea { max-height: 4.5rem; }
   .chat-main .composer-wrap,
   .chat-main .composer-wrap.home { position: relative; inset: auto; inline-size: auto; flex: none; margin: 8px var(--chat-dock-inset); }
   .chat-main .composer-wrap::before { display: none; }

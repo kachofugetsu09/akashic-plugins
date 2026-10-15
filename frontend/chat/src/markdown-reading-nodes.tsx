@@ -2,7 +2,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { CodeBlockNode, ListNode, ParagraphNode as ParagraphRenderer, PreCodeNode, type NodeComponentProps } from "markstream-react";
 import type { CodeBlockNode as CodeData, ListNode as ListData, ParagraphNode, ParsedNode, TableNode as TableData } from "stream-markdown-parser";
-import { copyReadingCode, isConceptLabel, isNumericColumn, isPlainTextLanguage, stripConceptSeparator } from "./markdown-reading";
+import { copyReadingCode, isConceptLabel, isNumericColumn, isPlainTextLanguage, stripConceptSeparator, watchOverflowEdges, writeOverflowEdges } from "./markdown-reading";
 
 export const CODE_BLOCK_PROPS = {
   showLineNumbers: false,
@@ -83,7 +83,10 @@ export function ReadingTable({ node, ctx, renderNode, indexKey }: NodeComponentP
   const numeric = node.header.cells.map((_header, index) => isNumericColumn(
     node.rows.map((row) => row.cells[index] ? row.cells[index].children.map(nodeText).join("") : ""),
   ));
-  return <div className="reading-table">
+  const ref = useRef<HTMLDivElement>(null);
+  // 必要 effect：横滚两侧是否有藏住的列只能在布局后量到；流式追加行由 ResizeObserver 跟上。
+  useEffect(() => (ref.current ? watchOverflowEdges(ref.current) : undefined), []);
+  return <div ref={ref} className="reading-table">
     <table aria-busy={node.loading}>
       <thead><tr>{node.header.cells.map((cell, index) => <th key={index} dir="auto"
         className={numeric[index] ? "reading-number" : undefined} style={{ textAlign: cell.align ?? (numeric[index] ? "right" : undefined) }}>
@@ -120,8 +123,7 @@ function PlainCodeCopy({ code }: { code: string }) {
   </button>;
 }
 
-// 横滚发生在高亮组件的 shadow DOM 里（生成中则是普通 pre），触屏滚动条是浮层，看不出右边还有字。
-// 量出滚动位置写到外层 data-overflow（start / end），样式在对应边缘渐隐。
+// 代码的横滚发生在高亮组件的 shadow DOM 里（生成中则是普通 pre），触屏滚动条是浮层，看不出右边还有字。
 function useCodeOverflowEdges(ref: RefObject<HTMLDivElement | null>): void {
   useEffect(() => {
     const wrapper = ref.current;
@@ -134,10 +136,7 @@ function useCodeOverflowEdges(ref: RefObject<HTMLDivElement | null>): void {
     const measure = () => {
       const scope: ParentNode = root ?? wrapper;
       scroller = [...scope.querySelectorAll<HTMLElement>("pre, code")].find((el) => el.scrollWidth > el.clientWidth + 1) ?? null;
-      const start = scroller !== null && scroller.scrollLeft > 1;
-      const end = scroller !== null && scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
-      const next = [start ? "start" : "", end ? "end" : ""].filter(Boolean).join(" ");
-      if (wrapper.dataset.overflow !== next) wrapper.dataset.overflow = next;
+      writeOverflowEdges(wrapper, scroller);
     };
     const onScroll = () => measure();
     // 2. 高亮组件可能晚于本组件挂载，等宿主出现再接上滚动与尺寸监听。

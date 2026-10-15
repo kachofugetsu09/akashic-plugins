@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo } from "react";
-import { copyReadingCode } from "./markdown-reading";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { copyReadingCode, watchOverflowEdges } from "./markdown-reading";
 import { renderStaticMarkdown } from "./static-markdown";
 
 export const StaticMessageResponse = memo(function StaticMessageResponse({
@@ -10,6 +10,13 @@ export const StaticMessageResponse = memo(function StaticMessageResponse({
   onError?: (error: unknown) => void;
 }) {
   const html = useMemo(() => renderStaticMarkdown(children), [children]);
+  const ref = useRef<HTMLDivElement>(null);
+  // 必要 effect：静态 HTML 里的宽表同样要标出哪边还有列；内容换了就重新接上。
+  useEffect(() => {
+    const tables = ref.current ? [...ref.current.querySelectorAll<HTMLElement>(".reading-table")] : [];
+    const stops = tables.map(watchOverflowEdges);
+    return () => stops.forEach((stop) => stop());
+  }, [html]);
   const copyCode = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -41,6 +48,7 @@ export const StaticMessageResponse = memo(function StaticMessageResponse({
 
   return (
     <div
+      ref={ref}
       className="static-message-response markdown-reading"
       onClick={copyCode}
       dangerouslySetInnerHTML={{ __html: html }}
