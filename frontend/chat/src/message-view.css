@@ -1507,10 +1507,17 @@ button.tool-step-summary:active {
   background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 }
 
-.shared-message-actions button:hover,
+/* 触屏的 :hover 会在点击后粘住，悬停底色只给真正能悬停的指针；按下反馈两者都有。 */
 .shared-message-actions button:active {
   color: var(--ak-ink-primary);
   background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent);
+}
+
+@media (hover: hover) {
+  .shared-message-actions button:hover {
+    color: var(--ak-ink-primary);
+    background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent);
+  }
 }
 
 .shared-message-meta {
@@ -1675,6 +1682,20 @@ button.tool-step-summary:active {
 }
 .reply-activity-label { display: flex; gap: 0.75rem; color: var(--ak-color-text-secondary); font-size: 0.8125rem; }
 .reply-unavailable { color: var(--ak-color-text-secondary); font-size: 0.8125rem; text-align: center; }
+/* 自动重连：安静的状态行，不用错误色，不给危险按钮；呼吸点表示仍在尝试。 */
+.connection-status { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.connection-status > i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ak-color-status-warning);
+  animation: connection-breathe 1.6s var(--ak-sys-motion-standard) infinite;
+}
+.connection-status button {
+  border: 0; padding: 4px 2px; color: var(--ak-ink-primary); background: none; font: inherit;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.connection-status button:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; border-radius: 4px; }
+@keyframes connection-breathe { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .connection-status > i { animation: none; } }
 .timeline-control-summary strong, .timeline-result-heading strong { font-size: 0.875rem; }
 .timeline-result-heading button { display: block; min-height: 2.75rem; color: var(--ak-ink-secondary); font-size: 0.8125rem; }
 .timeline-result-heading button:hover { color: var(--ak-ink-primary); }
@@ -1819,4 +1840,4 @@ button.tool-step-summary:active {
 .inline-reply-process { margin-bottom: 1rem; color: var(--ak-color-text-secondary); }
 .inline-reply-process > details > summary { min-height: 40px; }
 .attachment-description h3 { padding-inline-end: 44px; }
-@media (max-width: 820px) { .inline-reply-process > details > summary { min-height: 44px; } }
+@media (max-width: 820px), (max-height: 30rem) and (pointer: coarse) { .inline-reply-process > details > summary { min-height: 44px; } }

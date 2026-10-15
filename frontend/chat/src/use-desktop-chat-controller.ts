@@ -92,6 +92,11 @@ function clearChatRoute() {
   window.history.replaceState(null, "", url);
 }
 
+/** 重发用尽仍未送达：属于连接问题，连接恢复后提示自动撤下。 */
+class DeliveryFailed extends Error {}
+
+const RECONNECTING_NOTICE = "连接已断开，正在重新连接…";
+
 export function useDesktopChatController() {
   const [surface, setSurface] = useState<"chat" | "runtime">(
     () => new URLSearchParams(window.location.search).get("surface") === "runtime" ? "runtime" : "chat",
@@ -242,9 +247,12 @@ export function useDesktopChatController() {
     statusRef.current = status;
   }, [status]);
 
+  // 当前错误是否只是"断线导致没送达"：连接恢复后自动撤下，草稿仍在输入框里。
+  const deliveryErrorRef = useRef(false);
   const reportError = useCallback((error: unknown, nextStatus?: ChatStatus): void => {
     if (isAbortError(error)) return;
     console.error("[chat] request failed", error);
+    deliveryErrorRef.current = error instanceof DeliveryFailed;
     setError(errorMessage(error));
     if (nextStatus) { statusLiveRef.current = nextStatus; setStatus(nextStatus); }
   }, []);
@@ -592,6 +600,10 @@ export function useDesktopChatController() {
             heartbeat = window.setInterval(() => probe?.(), HEARTBEAT_INTERVAL_MS);
             probeRef.current = probe;
             setConnectionError("");
+            if (deliveryErrorRef.current) {
+              deliveryErrorRef.current = false;
+              setError("");
+            }
             console.info("[chat-ui] ws connected", current.url);
             const sessionId = activeSessionRef.current;
             if (sessionId) {
@@ -624,7 +636,7 @@ export function useDesktopChatController() {
         setSessionJobs(null);
         for (const settle of jobStopsRef.current.values()) settle(false);
         setStatusLive(replyChatStatus([], messagesRef.current.length, [], false));
-        if (event.code !== 1000 && event.code !== 1013) setConnectionError("连接已断开，正在重新连接…");
+        if (event.code !== 1000 && event.code !== 1013) setConnectionError(RECONNECTING_NOTICE);
         yield* reconnect.next(undefined);
         socket = yield* Effect.sync(() => new WebSocket(url));
         socketRef.current = socket;
@@ -635,9 +647,12 @@ export function useDesktopChatController() {
     receiveSessionActivity, reconnect, reportError, setFollowAfter, setMessages, setReplyAvailable, setStatusLive, setTimelineMessages]);
 
   // 手机从后台回来或网络切换后，旧连接常常已经半开；立刻探测一次，不等下一轮心跳。
+  // 已断开、正在退避等待时直接重连并重置退避：网络回来了不必再等最长 30 秒。
   useEffect(() => {
     const check = () => {
-      if (document.visibilityState === "visible") probeRef.current?.();
+      if (document.visibilityState !== "visible") return;
+      if (probeRef.current) probeRef.current();
+      else if (connectionTaskRef.current && !socketRef.current) connect();
     };
     window.addEventListener("online", check);
     document.addEventListener("visibilitychange", check);
@@ -645,7 +660,7 @@ export function useDesktopChatController() {
       window.removeEventListener("online", check);
       document.removeEventListener("visibilitychange", check);
     };
-  }, []);
+  }, [connect]);
 
   useEffect(() => {
     // 只等待首次启动就绪；此后的断线与恢复由聊天连接负责。
@@ -794,7 +809,7 @@ export function useDesktopChatController() {
         if (isAbortError(error) || error instanceof SendRejected) throw error;
         console.warn("[chat-ui] send attempt failed", { attempt, error });
       }
-      if (attempt >= SEND_ATTEMPTS) throw new Error("网络不稳定，消息没有送达，已放回输入框。");
+      if (attempt >= SEND_ATTEMPTS) throw new DeliveryFailed("网络不稳定，消息没有送达，已放回输入框。");
       console.warn("[chat-ui] send not acknowledged, reconnecting", { attempt });
       onRetry();
       if (socketRef.current === socket) closeConnection();
@@ -1185,7 +1200,10 @@ export function useDesktopChatController() {
     canSend, modelProblem, modelsPhase, modelsError, retryModels, draftKey: activeSessionId || `new:${newChatProjectId}`,
     historyHasMore, historyLoading, historyLoadingOlder, loadOlderMessages, sessionRequested: requestedSessionId !== "",
     activeSessionDeleted, deletedNotice, deleteSession, restoreSession, dismissDeletedNotice, renameSession,
-    selectedRuntimeId, selectedReasoningEffort, replyTarget, error: error || connectionError,
+    // 自动重连是会自己恢复的临时状态，单独给视图一个安静的状态行；重连失败等才走错误行。
+    reconnecting: !error && connectionError === RECONNECTING_NOTICE,
+    connectionLost: connectionError !== "",
+    selectedRuntimeId, selectedReasoningEffort, replyTarget, error: error || (connectionError === RECONNECTING_NOTICE ? "" : connectionError),
     activateSession, prefetchSessionTail, startNewChat, handleReplyMessage, handleCopiedMessage,
     reportError, handleModelChange, cancelReply, sendMessage, stopTurn, retry,
     projects, pendingProjects, pendingProjectsError, projectsInstalled, memoryInstalled, activeProject, navigationPins, bindDirectory,

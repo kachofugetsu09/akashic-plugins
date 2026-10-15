@@ -1,5 +1,5 @@
 import { ArrowDown } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import type { ChatMessage } from "./chat-message";
@@ -356,4 +356,123 @@ export function TurnRail({ revision }: { revision: string }) {
       </li>)}
     </ol>
   </nav>;
+}
+
+interface ReadingPosition {
+  id: string;
+  offset: number;
+}
+
+// 本标签页内每个会话读到哪里；贴近底部时不记，回来照常贴底。按最近使用保留 50 个会话，删掉的会话自然淘汰。
+const readingPositions = new Map<string, ReadingPosition>();
+const READING_POSITIONS_LIMIT = 50;
+
+function rememberReading(sessionId: string, position: ReadingPosition): void {
+  readingPositions.delete(sessionId);
+  readingPositions.set(sessionId, position);
+  if (readingPositions.size > READING_POSITIONS_LIMIT) {
+    const oldest = readingPositions.keys().next().value;
+    if (oldest !== undefined) readingPositions.delete(oldest);
+  }
+}
+
+// 阅读区顶缘下的第一条消息：用 elementFromPoint 取，不逐条扫描；落在消息间隙时往下多探两次。
+// 横坐标取阅读列中线而不是滚动区中线：超宽屏阅读列偏左，滚动区中线会落在列外空白。
+function readingPosition(scroller: HTMLElement): ReadingPosition | null {
+  const box = scroller.getBoundingClientRect();
+  const column = scroller.querySelector(".conversation-content")?.getBoundingClientRect() ?? box;
+  const x = column.left + column.width / 2;
+  const top = box.top + readingTopInset(scroller);
+  for (const dy of [2, 24, 48]) {
+    const hit = document.elementFromPoint(x, top + dy)?.closest<HTMLElement>(".web-message-anchor[data-message-id]");
+    if (hit && scroller.contains(hit)) return { id: hit.dataset.messageId ?? "", offset: hit.getBoundingClientRect().top - box.top };
+  }
+  return null;
+}
+
+/** 切走再切回会话时回到上次读到的位置；那条消息不在已载入范围内时照常贴底。 */
+export function SessionReadingMemory({ sessionId, ready }: { sessionId: string; ready: string }) {
+  const { scrollRef, stopScroll } = useStickToBottomContext();
+  const restoringRef = useRef<ReadingPosition | null>(null);
+  // 逐帧恢复进行中：压回位置产生的滚动不是用户在读，不能记成阅读位置。
+  const applyingRef = useRef(false);
+
+  // 必要 effect：切换会话时取出该会话的阅读位置，等消息就绪后再恢复；恢复前不记录
+  useLayoutEffect(() => {
+    restoringRef.current = sessionId ? readingPositions.get(sessionId) ?? null : null;
+  }, [sessionId]);
+
+  // 必要 effect：消息就绪后把记住的那条消息放回原偏移；虚拟占位会让首次定位漂移，逐帧校正到稳定
+  useLayoutEffect(() => {
+    const target = restoringRef.current;
+    if (!target || !ready) return;
+    restoringRef.current = null;
+    applyingRef.current = true;
+    // 1. 会话之间切换时滚动区是同一个节点；从首页（还没有对话区）切回时它才挂载，ref 与目标消息都可能晚一帧出现。
+    //    每帧重新取滚动区与锚点，找不到就等下一帧，不立即放弃。
+    const find = () => {
+      const scroller = scrollRef.current;
+      const anchor = scroller?.isConnected
+        ? scroller.querySelector<HTMLElement>(`.web-message-anchor[data-message-id="${CSS.escape(target.id)}"]`) : null;
+      return scroller && anchor ? { scroller, anchor } : null;
+    };
+    // 2. 同一次提交里贴底逻辑还拿着"正在贴底"的旧状态会再调一次 scrollToBottom；定位放到之后的帧里逐帧压回。
+    let frames = 0;
+    let touched = false;
+    let cancelled = false;
+    const onInput = () => { touched = true; };
+    const inputs = ["wheel", "touchmove", "keydown", "pointerdown"] as const;
+    inputs.forEach((type) => window.addEventListener(type, onInput, { passive: true, capture: true }));
+    let located = false;
+    let frame = 0;
+    const finish = () => {
+      applyingRef.current = false;
+      inputs.forEach((type) => window.removeEventListener(type, onInput, { capture: true }));
+    };
+    const step = () => {
+      frame = 0;
+      // 3. 用户一有输入就把滚动交还给用户；最多尝试 20 帧。
+      if (cancelled || touched || frames >= 20) return finish();
+      frames += 1;
+      const found = find();
+      if (found) {
+        // 4. 第一次找到锚点时离开贴底跟随，之后的内容增长不再把视图拉回底部。
+        if (!located) stopScroll();
+        located = true;
+        const delta = found.anchor.getBoundingClientRect().top - found.scroller.getBoundingClientRect().top - target.offset;
+        if (Math.abs(delta) > 1) found.scroller.scrollTop += delta;
+      }
+      frame = window.requestAnimationFrame(step);
+    };
+    frame = window.requestAnimationFrame(step);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      finish();
+    };
+  }, [ready, scrollRef, stopScroll]);
+
+  // 必要 effect：随滚动记录阅读位置（合并到每帧一次）；等待恢复与逐帧恢复期间都不覆盖。
+  // 切换期间旧消息被清空时会话 id 可能还没变；只在消息确实属于当前会话（ready）时记录，免得清空引起的滚动抹掉旧位置。
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !sessionId || !ready) return;
+    let frame = 0;
+    const record = () => {
+      frame = 0;
+      if (restoringRef.current || applyingRef.current) return;
+      const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      const position = gap > 80 ? readingPosition(scroller) : null;
+      if (position?.id) rememberReading(sessionId, position);
+      else if (gap <= 80) readingPositions.delete(sessionId);
+    };
+    const onScroll = () => { if (!frame) frame = window.requestAnimationFrame(record); };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [ready, scrollRef, sessionId]);
+
+  return null;
 }

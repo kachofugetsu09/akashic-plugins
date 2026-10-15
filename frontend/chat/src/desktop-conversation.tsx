@@ -13,7 +13,7 @@ import { StreamProjectionStore } from "./stream-projection";
 import type { ChatStatus } from "./web-chat-status";
 import { webTurnTrace } from "./web-turn-trace";
 
-const LIVE_TAIL_MESSAGES = 16;
+const LIVE_TAIL_MESSAGES = 120;
 
 type ProjectedChatMessageViewProps = React.ComponentProps<typeof ChatMessageView> & {
   streamStore: StreamProjectionStore<ChatMessage>;
@@ -372,6 +372,8 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
   // 末尾一段不跳过渲染：新插入或刚切到 content-visibility:auto 的元素首帧按 160px 占位布局，
   // 一轮落定时正式回复会先塌成占位高度、滚动被夹紧，下一帧再弹回，形成整屏闪跳。
   // 窗口取得足够宽，切换只发生在远离视口的上方，由原生滚动锚定吸收。
+  // 宽度约两页历史：content-visibility 每次解锁都要一帧布局，用户最常滚动的近段不锁更省；
+  // 更早的历史仍然锁住，改窗口宽度、开合侧栏时重排的范围有上限。
   const settledFrom = visibleMessages.length - LIVE_TAIL_MESSAGES;
   return <>{visibleMessages.map((message, index) => <React.Fragment key={message.id}>
     {dayBreaks.has(message.id) ? <DaySeparator label={dayBreaks.get(message.id)!} /> : null}

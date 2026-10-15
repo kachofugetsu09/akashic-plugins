@@ -22,15 +22,20 @@ export type ComposerFile = { filename?: string; mediaType?: string; url?: string
 export interface ComposerApi {
   /** append：接在已有草稿之后（空行分隔），否则替换。 */
   insertDraft: (text: string, options?: { append?: boolean }) => void;
+  /** 把焦点交给输入框并把光标放到末尾（如选择回复引用之后）。 */
+  focus: () => void;
 }
 
 /** Own transient editor state while the app controller owns transport and durable chat state. */
 // 浮层打开时按键与拖放都属于浮层：读回复打字、窗口拖放都让路。
 const FLOATING_LAYER = "[role='dialog'], [role='menu'], [role='listbox'], [data-radix-popper-content-wrapper]";
 
+// 自己在 document 上处理 Esc 的浮层：对话框、菜单、列表，以及标了 data-escape-layer 的非模态面板。
+const ESCAPE_LAYERS = "[role='dialog'], [role='menu'], [role='listbox'], [data-radix-popper-content-wrapper], [data-escape-layer]";
+
 export const DesktopComposer = memo(function DesktopComposer({
   chatReady, canSend, modelProblem, draftKey, autoFocus = false, fresh = false, status, stopPending, stopCount, inputId, turnCompleted, modelState, selectedRuntimeId, selectedEffort, replyTarget,
-  onModelChange, onCancelReply, onSend, onStop, ref,
+  onModelChange, onCancelReply, onSend, onStop, lastInput = "", ref,
 }: {
   chatReady: boolean;
   canSend: boolean;
@@ -53,6 +58,8 @@ export const DesktopComposer = memo(function DesktopComposer({
   onCancelReply: () => void;
   onSend: (text: string, files: ComposerFile[]) => Promise<string | undefined>;
   onStop: () => void;
+  /** 当前会话最后一条用户提问；空输入框按 ↑ 取回编辑。 */
+  lastInput?: string;
   ref?: Ref<ComposerApi>;
 }) {
   // 标签页文本草稿是展示状态，既不上传，也不创建 Message。
@@ -96,6 +103,12 @@ export const DesktopComposer = memo(function DesktopComposer({
     ));
   }, []);
   useImperativeHandle(ref, () => ({
+    focus: () => window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }),
     // 写入后把焦点与光标放到草稿末尾，用户接着补完即可。
     insertDraft: (text, options) => {
       const current = options?.append ? drafts.current.get(draftKey)?.trim() : "";
@@ -145,6 +158,30 @@ export const DesktopComposer = memo(function DesktopComposer({
     const timer = window.setTimeout(() => setQueueRefused(false), 2400);
     return () => window.clearTimeout(timer);
   }, [queueRefused]);
+  const onComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const native = event.nativeEvent;
+    // 生成中在输入框按 Esc 停止本轮（coding 工具的中断习惯）；输入法组合中的 Esc 属于输入法。
+    // 有浮层开着时 Esc 先关浮层（浮层在 document 上自己监听），这一下不能顺带停掉生成。
+    if (event.key === "Escape" && !native.isComposing && native.keyCode !== 229
+      && isGeneratingChatStatus(status) && !stopPending && !document.querySelector(ESCAPE_LAYERS)) {
+      event.preventDefault();
+      onStop();
+      return;
+    }
+    // 空输入框按 ↑ 取回上一条提问（终端与聊天工具的习惯）；有内容时 ↑ 仍是移动光标。
+    if (event.key === "ArrowUp" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey
+      && !native.isComposing && !input && lastInput && !hasAttachments) {
+      event.preventDefault();
+      setInput(lastInput);
+      const textarea = event.currentTarget;
+      window.requestAnimationFrame(() => {
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        syncExpanded(textarea, textarea.value);
+      });
+      return;
+    }
+    queueOnEnter(event);
+  };
   const queueOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     // 本轮未落定时，桌面键盘按回车把纯文字排到本轮之后。
     const native = event.nativeEvent;
@@ -208,7 +245,7 @@ export const DesktopComposer = memo(function DesktopComposer({
           className="composer__textarea !min-h-0"
           value={input}
           onChange={onInputChange}
-          onKeyDown={queueOnEnter}
+          onKeyDown={onComposerKeyDown}
           aria-label="消息"
           aria-describedby={modelProblem ? "chat-model-reason" : undefined}
           disabled={!chatReady}
@@ -498,6 +535,8 @@ function ComposerSubmit({ input, status, stopPending, onStop, disabled }: { inpu
     mode={generating ? "stop" : "send"}
     label={stopPending ? "正在停止" : status === "finalizing" ? "正在收尾" : status === "uploading" ? "取消上传" : generating ? "中止回答" : "发送消息"}
     type={generating ? "button" : "submit"}
+    title={generating && !stopping ? "中止回答（Esc）" : undefined}
+    aria-keyshortcuts={generating ? "Escape" : undefined}
     aria-disabled={stopping || undefined}
     onClick={generating ? (event) => {
       // 取消会把同一按钮变回 submit；先阻断这次点击的默认提交。

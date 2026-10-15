@@ -1,4 +1,4 @@
-import { timelineReplyGroups, timelineToolResults, timelineInputStarts, timelineSourceKey, timelineSourceRefreshTokens } from "./message-timeline";
+import { type TimelineMessage, type TimelineReply, timelineReplyGroups, timelineText, timelineToolResults, timelineInputStarts, timelineSourceKey, timelineSourceRefreshTokens } from "./message-timeline";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { cycleTheme, useTheme } from "../../theme/src/theme-runtime";
@@ -9,7 +9,7 @@ import {
   ConversationEmptyState,
 } from "@/components/ai-elements/conversation";
 import { HostBridgeNotice } from "./host-bridge-notice";
-import { DesktopAutoScroll, NarrowReadingChrome, ReadingReturnButton, TurnRail } from "./desktop-auto-scroll";
+import { DesktopAutoScroll, NarrowReadingChrome, ReadingReturnButton, SessionReadingMemory, TurnRail } from "./desktop-auto-scroll";
 import { ComposerStatsLine } from "./composer-stats-line";
 import { ThinkingPlaceholder } from "./thinking-placeholder";
 import { DesktopComposer, type ComposerApi } from "./desktop-composer";
@@ -29,10 +29,21 @@ interface DesktopChatViewProps {
   controller: DesktopChatController;
 }
 
+// 当前会话最后一条用户提问的正文。
+function lastUserInput(messages: readonly TimelineMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.body.kind === "input" && message.author === "user") return timelineText(message);
+  }
+  return "";
+}
+
 export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewProps) {
   const theme = useTheme();
   const rail = useSidebarRail();
   const composerApi = useRef<ComposerApi | null>(null);
+  // 空输入框按 ↑ 取回的上一条提问。
+  const lastInput = useMemo(() => lastUserInput(controller.timelineMessages), [controller.timelineMessages]);
   // 改一改再问：原文接在已有草稿之后，不覆盖用户正在写的内容。
   const editInput = useCallback((text: string) => composerApi.current?.insertDraft(text, { append: true }), []);
   const replyGroups = useMemo(() => timelineReplyGroups(controller.timelineMessages, controller.replyActivities), [controller.timelineMessages, controller.replyActivities]);
@@ -53,6 +64,11 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
   } = controller;
   const inputResult = useMemo(() => lastInputResult(timelineMessages), [timelineMessages]);
   const inputId = messages.filter((message) => message.role === "user").at(-1)?.id ?? inputResult.id;
+  // 选了回复引用就是要开始写：焦点直接进输入框（触屏会弹出键盘），不必再点一次。
+  const replyTo = useCallback((reply: TimelineReply) => {
+    handleReplyMessage(reply);
+    composerApi.current?.focus();
+  }, [handleReplyMessage]);
   const sidebarProjects = useMemo(() => projectsInstalled ? {
     items: projects, pending: pendingProjects, pendingError: pendingProjectsError,
     activeProjectId: activeProject?.id ?? "", memoryInstalled,
@@ -123,7 +139,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
                 />
                 <DesktopTimelineMessages messages={timelineMessages} activities={replyActivities} refresh={controller.timelineRefresh} status={status}
                   messageElementsRef={messageElementsRef} copiedMessageId={copiedMessageId}
-                  onReply={handleReplyMessage} onEditInput={editInput} onCopied={handleCopiedMessage} onError={reportError} />
+                  onReply={replyTo} onEditInput={editInput} onCopied={handleCopiedMessage} onError={reportError} />
                 <DesktopConversationMessages
                   messages={messages} status={status}
                   carryDayKey={timelineMessages.length
@@ -143,6 +159,9 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
             timelineMessages={timelineMessages} replyActivities={replyActivities} />
           <NarrowReadingChrome />
           <ReadingReturnButton generating={isGeneratingChatStatus(status)} />
+          <SessionReadingMemory sessionId={activeSessionId}
+            ready={!historyLoading && timelineMessages.at(-1)?.session_id === activeSessionId
+              ? `${timelineMessages.length}:${timelineMessages[0]?.id ?? ""}` : ""} />
           <TurnRail revision={`${activeSessionId}:${timelineMessages.length}:${messages.length}:${timelineMessages[0]?.id ?? ""}`} />
         </Conversation>
 
@@ -166,11 +185,15 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
             inputId={inputId} turnCompleted={replyAvailable !== false && inputResult.completed} modelState={modelState}
             selectedRuntimeId={selectedRuntimeId} selectedEffort={selectedReasoningEffort}
             replyTarget={replyTarget} onModelChange={handleModelChange} onCancelReply={cancelReply}
-            onSend={sendMessage} onStop={stopTurn}
+            onSend={sendMessage} onStop={stopTurn} lastInput={lastInput}
           />
           <ComposerStatsLine messages={timelineMessages} activities={replyActivities} connected={replyAvailable !== null} />
           {replyAvailable === false ? <p className="reply-unavailable" role="status">当前未加载回复插件</p> : null}
-          <HostBridgeNotice />
+          {controller.reconnecting ? <p className="reply-unavailable connection-status" role="status">
+            <i aria-hidden="true" />连接已断开，正在重新连接…
+            <button type="button" onClick={retry}>立即重试</button>
+          </p> : null}
+          <HostBridgeNotice paused={controller.connectionLost} />
           {error ? <div className="error-line" role="alert"><span>{error}</span>
             <MaterialButton variant="danger" onClick={retry}>重试</MaterialButton>
           </div> : null}

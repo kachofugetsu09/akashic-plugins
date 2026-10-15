@@ -68,6 +68,14 @@ export function MessageReplyReference({
   );
 }
 
+// 引用条显示给人看的名字：内部角色名不外露，其它来源（渠道用户名等）原样显示。
+function replyAuthorLabel(author: string | undefined, role: ReplyRole | undefined): string {
+  const who = author ?? role;
+  if (who === "assistant") return "Akashic";
+  if (who === "user" || who === undefined) return "你";
+  return who;
+}
+
 export function ComposerReply({
   role,
   author,
@@ -80,10 +88,10 @@ export function ComposerReply({
   onCancel: () => void;
 }) {
   return (
-    <div className="composer-reply" aria-label={`正在回复 ${author ?? (role === "assistant" ? "Akashic" : "你")}`}>
+    <div className="composer-reply" aria-label={`正在回复 ${replyAuthorLabel(author, role)}`}>
       <Reply size={18} aria-hidden="true" />
       <div>
-        <strong>回复 {author ?? (role === "assistant" ? "Akashic" : "你")}</strong>
+        <strong>回复 {replyAuthorLabel(author, role)}</strong>
         <span>{preview}</span>
       </div>
       <button type="button" onClick={onCancel} aria-label="取消引用"><X size={19} /></button>
