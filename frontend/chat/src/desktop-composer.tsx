@@ -1,12 +1,12 @@
-import { Paperclip } from "lucide-react";
-import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type FocusEvent, type Ref } from "react";
+import { Clock3, Paperclip, Undo2 } from "lucide-react";
+import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
 import {
   Attachment, AttachmentHoverCard, AttachmentHoverCardContent, AttachmentHoverCardTrigger,
   AttachmentPreview, AttachmentRemove, Attachments, getAttachmentLabel, getMediaCategory,
 } from "@/components/ai-elements/attachments";
 import {
   PromptInput, PromptInputBody, PromptInputButton, PromptInputFooter, PromptInputTextarea, PromptInputTools,
-  usePromptInputAttachments,
+  touchOnly, usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import type { TimelineReply } from "./message-timeline";
 import { nextComposerExpanded } from "./composer-layout";
@@ -20,7 +20,8 @@ export type ComposerFile = { filename?: string; mediaType?: string; url?: string
 
 /** 空态推荐等外部入口写入草稿的窄接口。 */
 export interface ComposerApi {
-  insertDraft: (text: string) => void;
+  /** append：接在已有草稿之后（空行分隔），否则替换。 */
+  insertDraft: (text: string, options?: { append?: boolean }) => void;
 }
 
 /** Own transient editor state while the app controller owns transport and durable chat state. */
@@ -29,7 +30,7 @@ const FLOATING_LAYER = "[role='dialog'], [role='menu'], [role='listbox'], [data-
 
 export const DesktopComposer = memo(function DesktopComposer({
   chatReady, canSend, modelProblem, draftKey, autoFocus = false, fresh = false, status, stopPending, modelState, selectedRuntimeId, selectedEffort, replyTarget,
-  onModelChange, onCancelReply, onSend, onStop, ref,
+  onModelChange, onCancelReply, onSend, onStop, stopCount = 0, ref,
 }: {
   chatReady: boolean;
   canSend: boolean;
@@ -49,6 +50,8 @@ export const DesktopComposer = memo(function DesktopComposer({
   onCancelReply: () => void;
   onSend: (text: string, files: ComposerFile[]) => Promise<string | undefined>;
   onStop: () => void;
+  /** 控制器的停止计数；任一入口按停止都会递增。 */
+  stopCount?: number;
   ref?: Ref<ComposerApi>;
 }) {
   // 标签页文本草稿是展示状态，既不上传，也不创建 Message。
@@ -74,18 +77,6 @@ export const DesktopComposer = memo(function DesktopComposer({
   }, []);
   const setInput = useCallback((text: string) => setDraft(draftKey, text), [draftKey, setDraft]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  useImperativeHandle(ref, () => ({
-    // 写入后把焦点与光标放到草稿末尾，用户接着补完即可。
-    insertDraft: (text) => {
-      setDraft(draftKey, text);
-      window.requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-      });
-    },
-  }), [draftKey, setDraft]);
   useEffect(() => {
     if (autoFocus && chatReady) textareaRef.current?.focus();
   }, [autoFocus, chatReady, draftKey]);
@@ -100,6 +91,21 @@ export const DesktopComposer = memo(function DesktopComposer({
       () => textarea ? textarea.scrollHeight > textarea.clientHeight : false,
     ));
   }, []);
+  useImperativeHandle(ref, () => ({
+    // 写入后把焦点与光标放到草稿末尾，用户接着补完即可。
+    insertDraft: (text, options) => {
+      const current = options?.append ? drafts.current.get(draftKey)?.trim() : "";
+      setDraft(draftKey, current ? `${current}\n\n${text}` : text);
+      window.requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        // 放回的原文可能有多行：按实际溢出展开，与手动输入同一判定。
+        syncExpanded(textarea, textarea.value);
+      });
+    },
+  }), [draftKey, setDraft, syncExpanded]);
   const onInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
     const next = event.target.value;
     setInput(next);
@@ -125,7 +131,28 @@ export const DesktopComposer = memo(function DesktopComposer({
       throw error;
     }
   }, [canSend, modelProblem, expanded, onSend, setInput, setDraft, draftKey]);
-  const shellExpanded = expanded || hasAttachments || Boolean(replyTarget);
+  const readDraft = useCallback((key: string) => drafts.current.get(key) ?? "", []);
+  const followUp = useFollowUpQueue({ draftKey, status, stopPending, stopCount, canSend, readDraft, setDraft, onSend });
+  const [queueRefused, setQueueRefused] = useState(false);
+  useEffect(() => {
+    if (!queueRefused) return;
+    const timer = window.setTimeout(() => setQueueRefused(false), 2400);
+    return () => window.clearTimeout(timer);
+  }, [queueRefused]);
+  const queueOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    // 本轮未落定时发送钮是停止钮（或即将复位），回车原本无效；桌面键盘下改为排队。
+    const native = event.nativeEvent;
+    if (event.key !== "Enter" || event.shiftKey || native.isComposing || native.keyCode === 229 || touchOnly()) return;
+    const text = input.trim();
+    if (!turnBusy(status) || !text) return;
+    event.preventDefault();
+    // 附件与回复引用不排队：给一句提示，不再静默无反应。
+    if (hasAttachments || replyTarget) return setQueueRefused(true);
+    followUp.enqueue(text);
+    setInput("");
+    setExpanded(false);
+  };
+  const shellExpanded = expanded || hasAttachments || Boolean(replyTarget) || Boolean(followUp.queued);
   // 窄屏阅读时输入卡只保留一行。用户点进卡片才展开（程序 autofocus 不算）；
   // 焦点离开整张卡（含它弹出的模型菜单）才收回。
   const [engaged, setEngaged] = useState(false);
@@ -157,6 +184,17 @@ export const DesktopComposer = memo(function DesktopComposer({
     >
       <WindowFileDrop enabled={chatReady} onActiveChange={setFileDragActive} />
       {replyTarget ? <ComposerReply author={replyTarget.author} preview={replyTarget.preview} onCancel={onCancelReply} /> : null}
+      {followUp.queued ? <div className="composer-reply composer-queued">
+        <Clock3 size={17} aria-hidden="true" />
+        <div role="status">
+          <strong>{followUp.stopped ? "已停止，结束后退回输入框" : "本轮结束后发送"}</strong>
+          <span>{followUp.queued.text}</span>
+        </div>
+        <button type="button" onClick={() => followUp.queued && followUp.restore(followUp.queued)} aria-label="撤回到输入框" title="撤回到输入框">
+          <Undo2 size={18} aria-hidden="true" />
+        </button>
+      </div> : null}
+      {queueRefused ? <p className="composer-queue-refused" role="status">带附件或引用的消息，本轮结束后再发送</p> : null}
       {fileDragActive ? <div className="composer-drop-hint" aria-hidden="true">松开以添加文件</div> : null}
       <PromptInputBody>
         <ComposerAttachments onPresenceChange={setHasAttachments} />
@@ -166,6 +204,7 @@ export const DesktopComposer = memo(function DesktopComposer({
           className="composer__textarea !min-h-0"
           value={input}
           onChange={onInputChange}
+          onKeyDown={queueOnEnter}
           aria-label="消息"
           aria-describedby={modelProblem ? "chat-model-reason" : undefined}
           disabled={!chatReady}
@@ -203,6 +242,89 @@ export const DesktopComposer = memo(function DesktopComposer({
     </>
   );
 });
+
+interface QueuedFollowUp {
+  key: string;
+  text: string;
+  /** 排队时已在停止中。 */
+  stopped: boolean;
+  /** 排队时的停止计数；之后计数变化说明用户按过停止。 */
+  stopCount: number;
+}
+
+// 本轮是否未落定：生成中与收尾（finalizing）都算，排队入口与落定判定共用这一谓词。
+function turnBusy(status: ChatStatus): boolean {
+  return isGeneratingChatStatus(status) || status === "finalizing";
+}
+
+// 排队内容另存一份到标签页存储：刷新或崩溃后回到草稿，不会凭空丢失。
+function persistQueued(key: string, text: string | null): void {
+  try {
+    if (text) sessionStorage.setItem(`akashic.chat.queue:${key}`, text);
+    else sessionStorage.removeItem(`akashic.chat.queue:${key}`);
+  } catch (error) {
+    if (!(error instanceof DOMException)) throw error;
+  }
+}
+
+function takePersistedQueued(key: string): string {
+  try {
+    const text = sessionStorage.getItem(`akashic.chat.queue:${key}`) ?? "";
+    if (text) sessionStorage.removeItem(`akashic.chat.queue:${key}`);
+    return text;
+  } catch (error) {
+    if (!(error instanceof DOMException)) throw error;
+    return "";
+  }
+}
+
+// 本轮未落定时按回车把文字排进本轮之后；本轮正常落定再发出，停止、出错或切走会话则退回草稿。
+function useFollowUpQueue({ draftKey, status, stopPending, stopCount, canSend, readDraft, setDraft, onSend }: {
+  draftKey: string;
+  status: ChatStatus;
+  stopPending: boolean;
+  stopCount: number;
+  canSend: boolean;
+  readDraft: (key: string) => string;
+  setDraft: (key: string, text: string) => void;
+  onSend: (text: string, files: ComposerFile[]) => Promise<string | undefined>;
+}) {
+  const [queued, setQueuedState] = useState<QueuedFollowUp | null>(null);
+  const setQueued = useCallback((next: QueuedFollowUp | null, previousKey?: string) => {
+    if (previousKey) persistQueued(previousKey, null);
+    if (next) persistQueued(next.key, next.text);
+    setQueuedState(next);
+  }, []);
+  const restore = useCallback((item: QueuedFollowUp) => {
+    setQueued(null, item.key);
+    setDraft(item.key, [item.text, readDraft(item.key)].filter(Boolean).join("\n\n"));
+  }, [readDraft, setDraft, setQueued]);
+  const enqueue = (text: string) => setQueued(queued
+    ? { ...queued, text: `${queued.text}\n\n${text}` }
+    : { key: draftKey, text, stopped: stopPending, stopCount });
+  // 停止意图由控制器的计数广播，回复区横幅等其它停止入口同样生效。
+  const stopped = Boolean(queued && (queued.stopped || queued.stopCount !== stopCount));
+
+  // 必要 effect：上次标签页留下的排队内容（刷新、崩溃）回到该会话草稿，不替用户发出
+  useEffect(() => {
+    const orphan = takePersistedQueued(draftKey);
+    if (orphan) setDraft(draftKey, [orphan, readDraft(draftKey)].filter(Boolean).join("\n\n"));
+  }, [draftKey, readDraft, setDraft]);
+
+  // 必要 effect：本轮何时落定由传输层决定，这里把这一外部状态变化同步成发送或退回
+  useEffect(() => {
+    if (!queued) return;
+    // 1. 切走会话：排队内容回到原会话草稿。
+    if (queued.key !== draftKey) return restore(queued);
+    if (turnBusy(status)) return;
+    // 2. 用户停止、本轮出错或暂不可发：不替用户做决定。
+    if (stopped || status === "error" || !canSend) return restore(queued);
+    // 3. 正常落定：发出；失败同样退回草稿。
+    setQueued(null, queued.key);
+    onSend(queued.text, []).catch(() => restore(queued));
+  }, [queued, stopped, draftKey, status, canSend, onSend, restore, setQueued]);
+  return { queued, stopped, enqueue, restore };
+}
 
 // 读回复时直接打字就进入输入框：焦点不在任何可编辑处、也没有浮层时，把这次按键的焦点交给输入框，
 // 字符随按键的默认动作落进去。触屏设备没有这种输入方式，不挂监听。
