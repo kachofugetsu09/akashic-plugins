@@ -329,9 +329,11 @@ function DaySeparator({ label }: { label: string }) {
 }
 
 /** 展示完整日志，引用只定位原消息，不给工具结果补造助手身份。 */
-export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessages({ messages, activities, refresh = 0, status, messageElementsRef, copiedMessageId, onReply, onEditInput, onCopied, onError }: {
+export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessages({ messages, activities, replySynced, refresh = 0, status, messageElementsRef, copiedMessageId, onReply, onEditInput, onCopied, onError }: {
   messages: TimelineMessage[];
   activities: ReplyActivity[];
+  /** 本会话的回复状态已同步（收到 reply.status）：之后没有实时活动的未收尾轮次按已结束显示。 */
+  replySynced: boolean;
   refresh?: number;
   status: ChatStatus;
   messageElementsRef: React.RefObject<Map<string, HTMLDivElement>>;
@@ -350,7 +352,7 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
   }, [byId, onReply, status]);
   useNarrowMessageGestures(scrollRef, swipeReply);
   const toolResults = useMemo(() => timelineToolResults(messages), [messages]);
-  const groups = useMemo(() => timelineReplyGroups(messages, activities), [messages, activities]);
+  const groups = useMemo(() => timelineReplyGroups(messages, activities, replySynced), [messages, activities, replySynced]);
   const inputStarts = useMemo(() => timelineInputStarts(messages), [messages]);
   const refreshTokens = useMemo(() => timelineSourceRefreshTokens(messages, activities, refresh), [messages, activities, refresh]);
   const visibleMessages = useMemo(() => timelineVisibleMessages(messages, groups), [messages, groups]);
@@ -402,7 +404,7 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
       if (element) messageElementsRef.current.set(message.id, element);
       else messageElementsRef.current.delete(message.id);
     }}>
-    <TimelineMessageView message={message} turnStartedAt={turnStarts.get(message.id)} hideBody={groups.hiddenBodies.has(message.id) || groups.moved.has(message.id)} processMessages={groups.completed.get(message.id)}
+    <TimelineMessageView message={message} turnStartedAt={turnStarts.get(message.id)} hideBody={groups.hiddenBodies.has(message.id) || groups.moved.has(message.id)} processMessages={groups.completed.get(message.id)} turnOpen={groups.unsettled.has(message.id)}
       inlineReply={groups.inline.outputs.has(message.id)} leadingProcess={groups.inline.leading.get(message.id)}
       hideProcess={groups.moved.has(message.id)} lookupMessage={lookupMessage} toolResults={toolResults} onNavigate={onNavigate} onError={onError}
       beforeReasoning={(origin) => needsBeforeReasoningFallback(origin, inputStarts) ? <PluginUiSlot name="turn.before_reasoning"
@@ -412,7 +414,8 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
         name="turn.before_tool" sessionId={origin.session_id} messageId={origin.id} block={{ ...part, message_id: origin.id, part_index: index }} /> : null}
       afterBody={message.body.kind === "output" && message.body.finish === "complete" ? <PluginUiSlot
         name="turn.after_answer" sessionId={message.session_id} messageId={message.id} /> : undefined} />
-    {!groups.hiddenBodies.has(message.id) && !groups.moved.has(message.id) && !groups.joined.has(message.id) ? <div className={`shared-message-meta timeline-meta ${message.body.kind === "input" ? "user" : "assistant"}`}>
+    {/* 轮次未结束的输出还会接着长，时间与复制等落定后挂在末条上，和实时视图一致。 */}
+    {!groups.hiddenBodies.has(message.id) && !groups.moved.has(message.id) && !groups.joined.has(message.id) && !groups.unsettled.has(message.id) ? <div className={`shared-message-meta timeline-meta ${message.body.kind === "input" ? "user" : "assistant"}`}>
       <time dateTime={message.timestamp}>{formatMessageTime(message.timestamp)}</time>
       <SharedMessageActions
         canReply={status === "idle" && (message.body.kind === "input" || message.body.kind === "output")}
@@ -433,6 +436,7 @@ export const DesktopTimelineMessages = React.memo(function DesktopTimelineMessag
   // 草稿正文只更新活动行；身份/活动阶段变化才让稳定输入槽位重新读取事实。
   return previous.messages === next.messages
     && previous.status === next.status
+    && previous.replySynced === next.replySynced
     && previous.refresh === next.refresh
     && previous.messageElementsRef === next.messageElementsRef
     && previous.copiedMessageId === next.copiedMessageId

@@ -2,12 +2,9 @@ import { PluginUiSlot } from "./plugin-ui-runtime";
 import { ThinkingPlaceholder } from "./thinking-placeholder";
 import {
   Attachment,
-  AttachmentHoverCard,
-  AttachmentHoverCardContent,
-  AttachmentHoverCardTrigger,
   AttachmentFileBody,
-  AttachmentPreview,
   Attachments,
+  formatBytes,
   getAttachmentLabel,
   getMediaCategory,
 } from "@/components/ai-elements/attachments";
@@ -24,11 +21,14 @@ import {
 import { CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Brain, Check, ChevronDown, Copy, Download, Gauge, ImageIcon, Play, Video, Wrench } from "lucide-react";
+import { Brain, Check, ChevronDown, Copy, Download, ExternalLink, Gauge, ImageIcon, Play, Video, Wrench, X } from "lucide-react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
+import { MarqueeText } from "./marquee-text";
 import {
   Fragment,
   lazy,
@@ -512,10 +512,12 @@ function InlineReplyProcess({ messages, toolResults, beforeReasoning, beforePart
 }
 
 /** 保留消息引用与 part 位置，复用原聊天的过程和正文组件。 */
-export function TimelineMessageView({ message, lookupMessage, toolResults, onNavigate, onError, beforeReasoning, beforePart, afterBody, renderAttachment, hideBody = false, processMessages = [message], hideProcess = false, inlineReply = false, leadingProcess, canLoadReferences = false, turnStartedAt }: {
+export function TimelineMessageView({ message, lookupMessage, toolResults, onNavigate, onError, beforeReasoning, beforePart, afterBody, renderAttachment, hideBody = false, processMessages = [message], hideProcess = false, inlineReply = false, leadingProcess, canLoadReferences = false, turnStartedAt, turnOpen = false }: {
   message: TimelineMessage;
   /** 本轮用户输入的时间；摘要行据此给出整轮用时。 */
   turnStartedAt?: string;
+  /** 本轮还没结束：过程逐行显示，不收摘要。 */
+  turnOpen?: boolean;
   hideBody?: boolean;
   canLoadReferences?: boolean;
   toolResults: ReadonlyMap<string, TimelineMessage>;
@@ -532,7 +534,8 @@ export function TimelineMessageView({ message, lookupMessage, toolResults, onNav
   onError?: (error: unknown) => void;
 }) {
   const body = message.body;
-  const flow = hideProcess || inlineReply ? [] : timelineFlow(processMessages, message.id, toolResults);
+  // 未结束轮次里的输出都是 finish=continue，文字后面还有工具调用，是旁白而不是最终回答。
+  const flow = hideProcess || inlineReply ? [] : timelineFlow(processMessages, turnOpen ? "" : message.id, toolResults);
   const hasFlow = body.kind === "output" && flow.length > 0;
   const leadingContent = hideProcess || hasFlow || inlineReply ? null : beforeReasoning?.(message);
   const referencedArtifacts = new Set(body.kind === "control" ? [] : body.parts.flatMap((part) =>
@@ -568,9 +571,12 @@ export function TimelineMessageView({ message, lookupMessage, toolResults, onNav
       {body.kind === "input" ? attachmentList : null}
       {leadingProcess ? <InlineReplyProcess messages={leadingProcess} toolResults={toolResults}
         beforeReasoning={beforeReasoning} beforePart={beforePart} /> : null}
-      {hasFlow ? <SettledTurnFlow flow={flow} startedAt={turnStartedAt} endedAt={message.timestamp}
-        beforeReasoning={beforeReasoning} beforePart={beforePart}
-        partView={{ attachment, lookupMessage, onNavigate, onError, canLoadReferences }} /> : null}
+      {hasFlow ? turnOpen
+        ? <TimelineProcess flow={flow} beforeReasoning={beforeReasoning} beforePart={beforePart}
+          partView={{ attachment, lookupMessage, onNavigate, onError, canLoadReferences }} />
+        : <SettledTurnFlow flow={flow} startedAt={turnStartedAt} endedAt={message.timestamp}
+          beforeReasoning={beforeReasoning} beforePart={beforePart}
+          partView={{ attachment, lookupMessage, onNavigate, onError, canLoadReferences }} /> : null}
       {body.kind === "control" ? body.action === "failure" ? <div className="timeline-control-summary">
         <strong>{controlLabels[body.action]}</strong>
         {body.reason !== null ? <p className="plain-message-response">{body.reason}</p> : null}
@@ -770,43 +776,121 @@ function MessageAttachmentItem({ attachment }: { attachment: MessageAttachment }
     return <MessageContentVideo url={attachment.url} label={label} />;
   }
 
+  // 文件块本身已写全名、大小与类型，不再弹一张重复的悬停卡；悬停或聚焦时右上角露出下载图标，说明点下去会发生什么。
+  const size = attachment.sizeBytes !== undefined ? `（${formatBytes(attachment.sizeBytes)}）` : "";
   return (
-    <AttachmentHoverCard>
-      <AttachmentHoverCardTrigger asChild>
-        <a className="message-attachment-download" href={attachment.url} download={label} aria-label={`下载 ${label}`}>
-          <Attachment className="message-attachment-chip is-file" data={attachment}>
-            <AttachmentFileBody name={label} sizeBytes={attachment.sizeBytes} />
-          </Attachment>
-        </a>
-      </AttachmentHoverCardTrigger>
-      <AttachmentHoverCardContent>
-        <AttachmentHover attachment={attachment} />
-      </AttachmentHoverCardContent>
-    </AttachmentHoverCard>
+    <a className="message-attachment-download" href={attachment.url} download={label} aria-label={`下载 ${label}`} title={`下载 ${label}${size}`}>
+      <Attachment className="message-attachment-chip is-file" data={attachment}>
+        <AttachmentFileBody name={label} sizeBytes={attachment.sizeBytes} />
+        <Download className="message-attachment-download__icon" size={16} aria-hidden="true" />
+      </Attachment>
+    </a>
   );
 }
 
-// 视频与图片同一套：块里取首帧铺满（解不出时垫图标和文件名），点开在对话框里播放，而不是直接下载。
+// 视频与图片同一套：块里取首帧铺满（解不出时垫图标和文件名），点开在查看器里播放，而不是直接下载。
 function MessageContentVideo({ url, label }: { url: string; label: string }) {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button type="button" className="message-attachment-chip is-media is-video" title={`播放 ${label}`} aria-label={`播放 ${label}`}>
-          <span className="message-video-fallback">
-            <Video size={18} aria-hidden="true" />
-            <span>{label}</span>
-          </span>
-          <video src={url} muted playsInline preload="metadata" />
-          <span className="message-video-badge" aria-hidden="true"><Play size={12} fill="currentColor" /></span>
-        </button>
-      </DialogTrigger>
-      <DialogContent className="image-preview-dialog">
-        <DialogTitle className="sr-only">{label}</DialogTitle>
-        <video className="image-preview-full" src={url} controls autoPlay playsInline />
-      </DialogContent>
-    </Dialog>
-  );
+  return <MediaPreview url={url} label={label} kind="video">
+    <button type="button" className="message-attachment-chip is-media is-video" title={`播放 ${label}`} aria-label={`播放 ${label}`}>
+      <span className="message-video-fallback">
+        <Video size={18} aria-hidden="true" />
+        <span>{label}</span>
+      </span>
+      <video src={url} muted playsInline preload="metadata" />
+      <span className="message-video-badge" aria-hidden="true"><Play size={12} fill="currentColor" /></span>
+    </button>
+  </MediaPreview>;
 }
+
+// 图片与视频的查看器：整屏压暗，媒体按视口等比放大（小视频不再按原始尺寸播放）；顶栏是文件名、新标签打开、下载与关闭，点媒体外的空白处关闭。
+function MediaPreview({ url, label, kind, children }: { url: string; label: string; kind: MediaKind; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger asChild>{children}</DialogTrigger>
+    <MediaViewer url={url} label={label} kind={kind} onClose={() => setOpen(false)} />
+  </Dialog>;
+}
+
+type MediaKind = "image" | "video";
+
+function MediaViewer({ url, label, kind, onClose, returnFocus }: {
+  url: string; label: string; kind: MediaKind; onClose: () => void;
+  /** 没有 DialogTrigger 的入口（正文图片委托）关闭后把焦点还给它。 */
+  returnFocus?: HTMLElement;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  return <DialogContent className="media-preview" overlayClassName="media-preview-overlay" showCloseButton={false}
+    aria-describedby={undefined}
+    // 打开后焦点落在关闭钮（Esc 与回车都能离开），而不是顶栏第一个"新标签打开"。
+    onOpenAutoFocus={(event) => { event.preventDefault(); closeRef.current?.focus(); }}
+    onCloseAutoFocus={returnFocus ? (event) => {
+      if (!returnFocus.isConnected) return;
+      event.preventDefault();
+      returnFocus.focus({ preventScroll: true });
+    } : undefined}
+    onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="media-preview__bar">
+      <DialogTitle className="media-preview__title"><MarqueeText still>{label}</MarqueeText></DialogTitle>
+      <a href={url} target="_blank" rel="noreferrer" aria-label="在新标签页打开" title="在新标签页打开"><ExternalLink size={18} aria-hidden="true" /></a>
+      <a href={url} download={label} aria-label={`下载 ${label}`} title="下载"><Download size={18} aria-hidden="true" /></a>
+      <DialogClose ref={closeRef} aria-label="关闭" title="关闭（Esc）"><X size={20} aria-hidden="true" /></DialogClose>
+    </div>
+    {kind === "image"
+      ? <img alt={label} className="media-preview__media" src={url} />
+      : <video className="media-preview__media is-video" src={url} controls autoPlay playsInline />}
+  </DialogContent>;
+}
+
+// 正文图片（两条 Markdown 渲染路径都是普通 img）点开进同一个查看器。document 级委托不改渲染节点；
+// 键盘入口由这里补：可预览的图片设为可聚焦、按钮语义，Enter/空格打开，关闭后焦点回到这张图。
+export function ReplyImageViewer() {
+  const { scrollRef } = useStickToBottomContext();
+  const [image, setImage] = useState<{ url: string; label: string; trigger: HTMLImageElement } | null>(null);
+  // 必要 effect：点击、按键委托挂在 document 上；新消息与懒加载换出的 img 由 MutationObserver 补上键盘入口。
+  useEffect(() => {
+    const previewable = (node: EventTarget | null): node is HTMLImageElement =>
+      node instanceof HTMLImageElement && Boolean(node.closest(REPLY_IMAGE_SCOPE)) && !node.closest("a, button");
+    const open = (target: HTMLImageElement) => setImage({ url: target.currentSrc || target.src, label: target.alt || "图片", trigger: target });
+    const mark = (root: ParentNode) => {
+      for (const img of root.querySelectorAll("img")) {
+        // markstream 的图片自带 tabindex="0"：焦点属性与按钮语义分开补，不因已可聚焦就跳过角色和标签。
+        if (!previewable(img) || img.getAttribute("role") === "button") continue;
+        if (!img.hasAttribute("tabindex")) img.tabIndex = 0;
+        img.setAttribute("role", "button");
+        img.setAttribute("aria-label", `查看图片：${img.alt || "图片"}`);
+      }
+    };
+    const onClick = (event: MouseEvent) => { if (previewable(event.target)) open(event.target); };
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.key !== "Enter" && event.key !== " ") || !previewable(event.target)) return;
+      event.preventDefault();
+      open(event.target);
+    };
+    const scroller = scrollRef.current;
+    const observer = new MutationObserver((records) => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node instanceof HTMLImageElement) mark(node.parentElement ?? node);
+        else if (node instanceof Element && node.querySelector("img")) mark(node);
+      }
+    });
+    if (scroller) {
+      mark(scroller);
+      observer.observe(scroller, { childList: true, subtree: true });
+    }
+    document.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("click", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [scrollRef]);
+  return <Dialog open={image !== null} onOpenChange={(open) => { if (!open) setImage(null); }}>
+    {image ? <MediaViewer url={image.url} label={image.label} kind="image" returnFocus={image.trigger} onClose={() => setImage(null)} /> : null}
+  </Dialog>;
+}
+
+const REPLY_IMAGE_SCOPE = ".agent-content, .process-markdown";
 
 function MessageContentImage({
   attachment,
@@ -827,49 +911,18 @@ function MessageContentImage({
     );
   }
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button type="button" className="message-content-image" title="点击预览图片">
-          <img
-            alt={label}
-            className="message-content-image__media"
-            src={attachment.url}
-            loading="eager"
-            decoding="async"
-            onError={() => setFailed(true)}
-          />
-        </button>
-      </DialogTrigger>
-      <DialogContent className="image-preview-dialog">
-        <DialogTitle className="sr-only">{label}</DialogTitle>
-        <img alt={label} className="image-preview-full" src={attachment.url} />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AttachmentHover({ attachment }: { attachment: MessageAttachment }) {
-  const category = getMediaCategory(attachment);
-  const label = getAttachmentLabel(attachment);
-
-  return (
-    <div className="attachment-hover">
-      {category === "image" && attachment.url ? (
-        <img alt={label} className="attachment-hover-image" src={attachment.url} />
-      ) : (
-        <div className="attachment-hover-file">
-          <Attachment data={attachment}>
-            <AttachmentPreview />
-          </Attachment>
-        </div>
-      )}
-      <div className="attachment-hover-title">{label}</div>
-      {attachment.mediaType ? (
-        <div className="attachment-hover-type">{attachment.mediaType}</div>
-      ) : null}
-    </div>
-  );
+  return <MediaPreview url={attachment.url} label={label} kind="image">
+    <button type="button" className="message-content-image" title="点击预览图片">
+      <img
+        alt={label}
+        className="message-content-image__media"
+        src={attachment.url}
+        loading="eager"
+        decoding="async"
+        onError={() => setFailed(true)}
+      />
+    </button>
+  </MediaPreview>;
 }
 
 /** 每个过程项独立成行：思考、工具各自折叠，不共用外框。 */

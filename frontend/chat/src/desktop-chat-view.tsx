@@ -9,13 +9,13 @@ import {
   ConversationEmptyState,
 } from "@/components/ai-elements/conversation";
 import { HostBridgeNotice } from "./host-bridge-notice";
-import { DesktopAutoScroll, NarrowReadingChrome, ReadingReturnButton, SessionReadingMemory, TurnRail } from "./desktop-auto-scroll";
+import { DesktopAutoScroll, ComposerPageKeys, NarrowReadingChrome, ReadingReturnButton, SessionReadingMemory, TurnRail } from "./desktop-auto-scroll";
 import { ComposerStatsLine } from "./composer-stats-line";
 import { ThinkingPlaceholder } from "./thinking-placeholder";
 import { DesktopComposer, type ComposerApi } from "./desktop-composer";
 import { JobListAction } from "./job-list-action";
 import { DesktopConversationMessages, DesktopTimelineMessages, messageDayKey, withoutLeadingOrphanResults } from "./desktop-conversation";
-import { ReplyActivityView } from "./message-view";
+import { ReplyActivityView, ReplyImageViewer } from "./message-view";
 import { MessageSquarePlus } from "lucide-react";
 import { CompactNavigation } from "./compact-navigation";
 import { DesktopSidebar } from "./desktop-sidebar";
@@ -144,7 +144,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
                   loading={historyLoadingOlder}
                   onLoadOlder={() => loadOlderMessages().catch(reportError)}
                 />
-                <DesktopTimelineMessages messages={pagedTimeline} activities={replyActivities} refresh={controller.timelineRefresh} status={status}
+                <DesktopTimelineMessages messages={pagedTimeline} activities={replyActivities} replySynced={replyAvailable !== null} refresh={controller.timelineRefresh} status={status}
                   messageElementsRef={messageElementsRef} copiedMessageId={copiedMessageId}
                   onReply={replyTo} onEditInput={editInput} onCopied={handleCopiedMessage} onError={reportError} />
                 <DesktopConversationMessages
@@ -165,8 +165,10 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
           <DesktopAutoScroll messages={messages} status={status} streamStore={streamStore}
             timelineMessages={timelineMessages} replyActivities={replyActivities} />
           <NarrowReadingChrome />
+          <ComposerPageKeys />
           <ReadingReturnButton generating={isGeneratingChatStatus(status)} />
           {hasMessages ? <SelectionQuote onQuote={editInput} /> : null}
+          {hasMessages ? <ReplyImageViewer /> : null}
           <SessionReadingMemory sessionId={activeSessionId}
             ready={!historyLoading && timelineMessages.at(-1)?.session_id === activeSessionId
               ? `${timelineMessages.length}:${timelineMessages[0]?.id ?? ""}` : ""} />

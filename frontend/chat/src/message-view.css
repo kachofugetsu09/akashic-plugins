@@ -206,7 +206,7 @@
   outline: none;
 }
 
-.image-preview-full,
+.media-preview__media:not(.is-video),
 .attachment-hover-image {
   outline: 1px solid var(--ak-color-image-outline);
   outline-offset: -1px;
@@ -268,7 +268,7 @@
 /* 流式期间代码块先用 PreCodeNode 的 <pre> 渲染（块外的那一个），落定后换成高亮组件。两者必须同一几何：
    44px 块头位（+8px 首行偏移，按落定块实测）、12px/18px 行、一圈 subtle 发丝线、1rem 外边距。
    PreCodeNode 带 inline 字号/行高/上下内边距，只能用 !important 覆盖。 */
-:is(.agent-content, .process-markdown) .markstream-react pre[data-markstream-pre="1"]:not(.code-block-container pre) {
+:is(.agent-content, .process-markdown, .user-bubble) .markstream-react pre[data-markstream-pre="1"]:not(.code-block-container pre) {
   max-width: 100%;
   margin-block: 1rem !important;
   overflow-x: auto;
@@ -286,7 +286,7 @@
 
 /* 高亮组件加载期间，块头下面先放一个同样的 <pre> 占位：它已经在块里，不再自带块头留白与边框，
    只对齐高亮后代码区的字号、行高与内边距，换成高亮时块高不变。 */
-:is(.agent-content, .process-markdown) .code-block-container pre[data-markstream-pre="1"] {
+:is(.agent-content, .process-markdown, .user-bubble) .code-block-container pre[data-markstream-pre="1"] {
   margin: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -346,7 +346,7 @@
 
 /* 语言代码块保留现有高亮与复制，控件只占一行。外边距与流式 <pre> 同为 1rem；
    组件自带 my-4 工具类，显式 !important 让两边一致不依赖层叠顺序。 */
-:where(.agent-content, .process-markdown) .code-block-container {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-container {
   margin-block: 1rem !important;
   border: 1px solid var(--ak-rule-subtle) !important;
   border-radius: 0 !important;
@@ -355,7 +355,7 @@
 }
 
 /* 高亮主题把底色写在 shadow 的 :host 上；外部对宿主的声明优先，代码区与块头同一纸面。 */
-:where(.agent-content, .process-markdown) .code-block-container diffs-container {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-container diffs-container {
   --diffs-bg: var(--ak-paper-quiet);
   background-color: var(--ak-paper-quiet);
 }
@@ -385,7 +385,7 @@
   mask-image: linear-gradient(to right, transparent, #000 var(--code-edge), #000 calc(100% - var(--code-edge)), transparent);
 }
 
-:where(.agent-content, .process-markdown) .code-block-header {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-header {
   min-height: 0 !important;
   padding: 0 0.25rem 0 1rem !important;
   background: transparent !important;
@@ -393,44 +393,44 @@
 }
 
 @media (min-width: 36.0625rem) {
-  :where(.agent-content, .process-markdown) .code-header-actions .code-action-btn {
+  :where(.agent-content, .process-markdown, .user-bubble) .code-header-actions .code-action-btn {
     min-width: 36px;
     min-height: 36px;
   }
 }
 
-:where(.agent-content, .process-markdown) .code-block-header .icon-slot {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-header .icon-slot {
   display: none;
 }
 
 /* markstream 自带 `:where(.markstream-react) .code-block-header .code-header-title`（写死的灰、继承字体），特异性需高过它；
    流式标签用同一类名，两态同一字体、字重与墨色。 */
-:is(.agent-content, .process-markdown) :is(.code-block-header, .reading-code-scroll) .code-header-title {
+:is(.agent-content, .process-markdown, .user-bubble) :is(.code-block-header, .reading-code-scroll) .code-header-title {
   font-family: var(--ak-type-technical);
   font-size: var(--chat-type-caption, 0.75rem);
   font-weight: 500;
   color: var(--ak-ink-secondary);
 }
 
-:where(.agent-content, .process-markdown) .code-header-actions .code-action-btn {
+:where(.agent-content, .process-markdown, .user-bubble) .code-header-actions .code-action-btn {
   min-width: 44px;
   min-height: 44px;
 }
 
 /* markstream 的复制钮颜色走它根上的 --code-action-*（写死的近黑、浅灰底），在代码块上改接设计 token，深浅主题一致；
    复制成功与消息、工具结果的复制同一成功色反馈（组件只把 aria-label 换成"已复制"）。 */
-:where(.agent-content, .process-markdown) .code-block-container {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-container {
   --code-action-fg: var(--ak-ink-secondary);
   --code-action-hover-fg: var(--ak-ink-primary);
   --code-action-hover-bg: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent);
 }
 
-:is(.agent-content, .process-markdown) .code-header-actions .code-action-btn:is([aria-label="已复制"], [aria-label="Copied"]) {
+:is(.agent-content, .process-markdown, .user-bubble) .code-header-actions .code-action-btn:is([aria-label="已复制"], [aria-label="Copied"]) {
   color: var(--ak-sys-color-success);
   background: color-mix(in srgb, var(--ak-sys-color-success) 12%, transparent);
 }
 
-:where(.agent-content, .process-markdown) .code-block-container pre {
+:where(.agent-content, .process-markdown, .user-bubble) .code-block-container pre {
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
@@ -532,10 +532,9 @@
   padding-block-start: var(--chat-list-gap, 0.25em);
 }
 
+/* 嵌套列表仍用 ::marker：与顶层 ::before 同为阅读字体的次级墨色，不换等宽小字，同一份清单里两级序号不像两种文档。 */
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading ol > li::marker {
   color: var(--ak-ink-secondary);
-  font-family: var(--ak-type-technical);
-  font-size: 0.85em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -638,6 +637,92 @@
   background: var(--ak-paper-quiet);
 }
 
+/* 脚注区是正文的附注：发丝线隔开，次级墨色小一号，不像正文里又起了一个列表。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnotes {
+  margin-block-start: 1.25rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--ak-rule-subtle);
+  color: var(--ak-ink-secondary);
+  font-size: 0.875em;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnotes > ol {
+  margin-block: 0;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .data-footnote-backref {
+  text-decoration: none;
+}
+/* 富渲染路径（含代码、公式的回复）每条脚注各占一个 node-slot、各自带一条写死浅色的上边线、没有序号：
+   只在第一条前画同一条 subtle 发丝线，墨色、字号与静态路径一致，序号用计数器补成同样的"1."。
+   计数器要累加在 node-slot 上：累加在里层 .footnote-node 上时 Chromium 每条都从 1 数起。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .markdown-renderer {
+  counter-reset: reading-footnote;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .node-slot[data-node-type="footnote"] {
+  counter-increment: reading-footnote;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .node-slot:not([data-node-type="footnote"]) + .node-slot[data-node-type="footnote"] {
+  margin-block-start: 1.25rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--ak-rule-subtle);
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-node {
+  gap: 0;
+  padding-block-start: 0;
+  border-block-start: 0;
+  color: var(--ak-ink-secondary);
+  font-size: 0.875em;
+  line-height: inherit;
+}
+/* ReadingFootnote：脚注正文取自完整 GFM 解析（列表、代码、引用保留块结构），返回箭头本就在末段 p 里。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-footnote {
+  display: flex;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-footnote__body {
+  flex: 1;
+  min-width: 0;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-footnote__body > :where(p, ul, ol, blockquote) {
+  margin: 0 0 0.5em;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-footnote__body > :last-child {
+  margin-block-end: 0;
+}
+/* 脚注正文是块级 p，返回箭头会掉到下一行：只把紧挨箭头的那一段改成行内，箭头跟在句末，和静态路径一样；
+   多段脚注的前几段、列表、代码保持块结构，段间留半行。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-node .paragraph-node {
+  margin: 0 0 0.5em;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-node .paragraph-node:has(+ .footnote-anchor) {
+  display: inline;
+  margin: 0;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-anchor {
+  margin-inline-start: 0.25em;
+}
+/* markstream 在每个脚注引用处把段落拆成几个 p，"看这里 / [1] / ，还有这里"各占一行：同一段落槽里的 p 与引用改回行内排，
+   段后距挪到槽上。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .node-content:has(> .footnote-reference) {
+  margin-block-end: 0.75rem;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .node-content:has(> .footnote-reference) > .paragraph-node {
+  display: inline;
+  margin: 0;
+}
+/* 引用号与静态路径的上标同色同大小；markstream 写死的 "[1]" 文字保留。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-link {
+  color: var(--ak-color-action-primary);
+  font-size: 0.75em;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-node::before {
+  content: counter(reading-footnote) ".";
+  flex: 0 0 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .footnote-anchor {
+  font-size: inherit;
+  text-decoration: none;
+}
+
 /* 无标题文本块：技术字符等宽，中文沿用阅读字体。 */
 .static-code-block,
 .reading-plain-text {
@@ -670,8 +755,8 @@
 
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-code-copy {
   position: absolute;
-  inset-block-start: 0.2rem;
-  inset-inline-end: 0.2rem;
+  inset-block-start: 0;
+  inset-inline-end: 0;
   display: grid;
   place-items: center;
   width: 44px;
@@ -681,6 +766,8 @@
   border-radius: 0;
   color: var(--ak-ink-muted);
   background: var(--ak-paper-quiet);
+  /* 贴住块的右上角，不留露出滚动文字的缝；横滚的长行在按钮左侧 16px 内淡出，不被硬切。 */
+  box-shadow: -16px 0 12px -4px var(--ak-paper-quiet);
   cursor: pointer;
 }
 
@@ -1616,23 +1703,87 @@ button.tool-step-summary:active {
   cursor: zoom-in;
 }
 
-.image-preview-dialog {
-  width: min(94vw, 56rem);
-  max-width: none;
-  max-height: 90vh;
+/* 图片/视频查看器：整屏压暗，内容宽度随媒体收紧（至少放得下顶栏），点媒体外的空白处关闭。
+   压暗层在深浅主题都是暗的，顶栏用固定的浅色前景，和所有看图器一样不随主题翻转。 */
+.media-preview-overlay {
+  background: rgb(var(--ak-color-shadow-rgb) / 0.86);
+}
+
+.media-preview {
+  display: grid;
+  width: max-content;
+  min-width: min(94vw, 24rem);
+  max-width: 94vw;
+  max-height: 96dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-items: center;
+  gap: 8px;
+  overflow: visible;
   border: 0;
+  border-radius: 0;
   padding: 0;
   background: transparent;
   box-shadow: none;
+  color: rgb(255 255 255 / 0.92);
 }
 
-.image-preview-full {
+.media-preview__bar {
+  display: flex;
+  min-width: 0;
+  justify-self: stretch;
+  align-items: center;
+  gap: 4px;
+}
+
+.media-preview__title {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.media-preview__bar :is(a, button) {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: 10px;
+  color: inherit;
+  opacity: 0.82;
+}
+
+.media-preview__bar :is(a, button):hover {
+  opacity: 1;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.media-preview__bar :is(a, button):focus-visible {
+  opacity: 1;
+  outline: 2px solid rgb(255 255 255 / 0.9);
+  outline-offset: 1px;
+}
+
+.media-preview__media {
   display: block;
-  max-width: 100%;
-  max-height: 84vh;
-  margin: 0 auto;
-  border-radius: 14px;
+  max-width: 94vw;
+  max-height: calc(96dvh - 48px);
+  border-radius: 10px;
   object-fit: contain;
+}
+
+/* 回复正文里的图片可点开看大图（ReplyImageViewer 委托点击）。 */
+:is(.agent-content, .process-markdown) img:not(:is(a, button) img) {
+  cursor: zoom-in;
+}
+
+/* 视频按视口放大：320px 的录屏也铺到 56rem 宽，等比、不裁切。 */
+.media-preview__media.is-video {
+  width: min(94vw, 56rem);
+  height: auto;
+  background: #000;
 }
 
 .composer-reply {
@@ -2061,6 +2212,23 @@ button.tool-step-summary:active {
 .message-attachment-download:focus-visible {
   outline: 2px solid var(--ak-color-action-primary);
   outline-offset: 2px;
+}
+
+/* 下载提示：悬停或聚焦时露出右下角图标（与左下扩展名标签对称，不压文件名）、块边线加深；触屏没有悬停，图标常驻但退一档。 */
+.message-attachment-download__icon {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  color: var(--ak-ink-secondary);
+  opacity: 0;
+  transition: opacity var(--ak-sys-duration-short, 150ms);
+}
+
+.message-attachment-download:is(:hover, :focus-visible) .message-attachment-download__icon { opacity: 1; }
+.message-attachment-download:hover .message-attachment-chip { border-color: var(--ak-rule-strong); }
+
+@media (hover: none) {
+  .message-attachment-download__icon { opacity: 0.7; }
 }
 
 /* 插图沿正文左缘，无卡片外壳；降级文字和下载由宿主保留。 */
