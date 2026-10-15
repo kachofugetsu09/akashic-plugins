@@ -144,7 +144,9 @@ export const DesktopComposer = memo(function DesktopComposer({
         moveQueue(draftKey, sessionId);
         setDraft(sessionId, next);
         setDraft(draftKey, "");
+        return sessionId;
       }
+      return undefined;
     } catch (error) {
       const later = drafts.current.get(draftKey) || "";
       setDraft(draftKey, [text, later].filter(Boolean).join("\n\n"));
@@ -210,6 +212,7 @@ export const DesktopComposer = memo(function DesktopComposer({
     <PromptInput
       className={`composer ${shellExpanded ? "is-expanded" : "is-compact"} ${input.trim() || replyTarget ? "has-text" : "empty"}${resting ? " is-resting" : ""}${fileDragActive ? " is-drop-target" : ""}`}
       multiple
+      attachmentKey={draftKey}
       data-draft-version={draftVersion}
       onSubmit={(message) => {
         // 触屏发送后收起键盘、输入卡回到静止态：接下来是读回复，半屏键盘和展开的工具行只会挡住它。

@@ -80,6 +80,9 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
     pendingProjectsError, projects, projectsInstalled, startProjectChat, stopProject]);
   const activeTitle = sidebarSessions.find((session) => session.active)?.title || "新会话";
   const headingTitle = activeProject ? `${activeProject.name} / ${activeTitle}` : activeTitle;
+  useDocumentTitle(activeSessionId || activeProject ? headingTitle : "", isGeneratingChatStatus(status));
+  const composerWrapRef = useRef<HTMLDivElement>(null);
+  useComposerClearance(composerWrapRef);
   const committed = new Set(timelineMessages.map((message) => message.id));
   const hasMessages = messages.length + timelineMessages.length + replyActivities.length > 0;
   // 读取已有会话期间就按会话版式摆放：输入区停在底部，消息到达时不从屏幕中央跳下来。
@@ -167,7 +170,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
           <TurnRail revision={`${activeSessionId}:${timelineMessages.length}:${messages.length}:${timelineMessages[0]?.id ?? ""}`} />
         </Conversation>
 
-        <div className={`composer-wrap ${!conversationLayout ? "home" : ""}`}>
+        <div ref={composerWrapRef} className={`composer-wrap ${!conversationLayout ? "home" : ""}`}>
           {status === "uploading" ? <p className="reply-unavailable" role="status">正在上传附件…</p> : null}
           {activeSessionDeleted ? <p className="reply-unavailable" role="status">
             此会话已删除，内容只读保留。
@@ -285,6 +288,61 @@ function DesktopHistoryLoader({
       ? <span role="status"><i className="desktop-history-loader__spinner" aria-hidden="true" />正在加载更早消息</span>
       : <button type="button" onClick={() => void load()}>↑ 更早的消息</button>}
   </div>;
+}
+
+// 输入卡浮在消息区底部，展开（多行、附件、引用、排队、触屏聚焦）时会长高；消息区底部留白只按紧凑态预留，
+// 多出来的部分写进 --composer-grown，留白与回到底部按钮一起让开，最新一条回复不会被盖在卡片下面。
+function useComposerClearance(wrapRef: React.RefObject<HTMLDivElement | null>): void {
+  // 必要 effect：输入卡高度只能在布局后量到。
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const main = wrap?.closest<HTMLElement>(".chat-main");
+    const scroller = main?.querySelector<HTMLElement>(".conversation-scroll");
+    if (!wrap || !main || !scroller) return;
+    // 1. 记下最近一次滚动时是否停在底部；留白变大时只有贴底的读者需要跟下去，往上翻着读的不动。
+    let pinned = true;
+    const onScroll = () => { pinned = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 4; };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const sync = () => {
+      const style = getComputedStyle(main);
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const length = (name: string) => {
+        const value = style.getPropertyValue(name).trim();
+        return value.endsWith("rem") ? parseFloat(value) * rem : parseFloat(value) || 0;
+      };
+      // 生成中的统计行本来就在预算里，不重复计入。
+      const grown = wrap.offsetHeight - length("--composer-compact-h") - length("--composer-stats-line");
+      main.style.setProperty("--composer-grown", `${Math.max(0, Math.round(grown))}px`);
+      // 2. 紧凑高度本身也会随聚焦态变化（窄屏），所以无论哪种长高，贴底时都把底部重新露出来。
+      if (pinned) scroller.scrollTop = scroller.scrollHeight;
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(wrap);
+    sync();
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", onScroll);
+      main.style.removeProperty("--composer-grown");
+    };
+  }, [wrapRef]);
+}
+
+// 标签页标题跟随当前会话，开着几个标签也分得清；页面在后台时本轮答完，标题前加"●"，回到页面即清除。
+function useDocumentTitle(title: string, generating: boolean): void {
+  const unseen = useRef(false);
+  const wasGenerating = useRef(generating);
+  // 必要 effect：document.title 与页面可见性都在 React 之外。
+  useEffect(() => {
+    if (wasGenerating.current && !generating && document.hidden) unseen.current = true;
+    wasGenerating.current = generating;
+    const apply = () => {
+      if (!document.hidden) unseen.current = false;
+      document.title = `${unseen.current ? "● " : ""}${title ? `${title} · ` : ""}Akashic`;
+    };
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => document.removeEventListener("visibilitychange", apply);
+  }, [title, generating]);
 }
 
 /** 时段问候只做一行小字；主标题保持"布置下一件事"的任务口吻。 */

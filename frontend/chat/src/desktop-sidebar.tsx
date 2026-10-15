@@ -490,8 +490,14 @@ export const DesktopSidebar = memo(function DesktopSidebar({
               const first = sessionRows(sidebarRef.current)[0];
               if (!first || (event.key === "Enter" && !searching)) return;
               event.preventDefault();
-              if (event.key === "Enter") first.click();
-              else first.focus();
+              if (event.key !== "Enter") { first.focus(); return; }
+              // 回车是"跳过去"而不是"边搜边看"：打开后清掉筛选，宽屏把焦点交给输入框接着写；
+              // 抽屉里不抢焦点，免得软键盘再弹出来。
+              first.click();
+              setQuery("");
+              if (!sidebarRef.current?.closest("[role='dialog']")) {
+                window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer-wrap textarea")?.focus({ preventScroll: true }));
+              }
             }}
             placeholder="搜索会话"
             aria-label="搜索会话"

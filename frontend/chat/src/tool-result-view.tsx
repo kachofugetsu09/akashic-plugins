@@ -122,7 +122,9 @@ function PreviewText({ text, tail, className }: { text: string; tail: boolean; c
     }
   }, [full]);
   const diff = useMemo(() => looksLikeDiff(lines), [lines]);
-  if (lines.length <= PREVIEW_LINES + PREVIEW_SLACK) return <pre className={className}>{diff ? <DiffLines lines={lines} /> : text}</pre>;
+  // diff 按行对照着读，折行会把一行增删拆散：整块不折行，在结果区里横向滚动。
+  const kind = diff ? `${className} is-diff` : className;
+  if (lines.length <= PREVIEW_LINES + PREVIEW_SLACK) return <pre className={kind}>{diff ? <DiffLines lines={lines} /> : text}</pre>;
   const visible = full ? lines : tail ? lines.slice(-PREVIEW_LINES) : lines.slice(0, PREVIEW_LINES);
   const shown = diff ? <DiffLines lines={visible} /> : visible.join("\n");
   const clipped = full ? "" : tail ? " is-clipped-head" : " is-clipped-tail";
@@ -135,7 +137,7 @@ function PreviewText({ text, tail, className }: { text: string; tail: boolean; c
   </button>;
   return <div className="tool-result-preview">
     {moreFirst ? more : null}
-    <pre ref={preRef} className={`${className}${clipped}`}>{shown}</pre>
+    <pre ref={preRef} className={`${kind}${clipped}`}>{shown}</pre>
     {moreFirst ? null : more}
   </div>;
 }

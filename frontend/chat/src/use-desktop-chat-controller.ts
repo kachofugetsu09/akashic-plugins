@@ -191,6 +191,8 @@ export function useDesktopChatController() {
   const [connectionError, setConnectionError] = useState("");
   const [shellState, setShellState] = useState<WebShellState | null>(null);
   const [replyTarget, setReplyTarget] = useState<TimelineReply | null>(null);
+  // 引用目标与草稿一样按会话保留：切去别的会话查点东西再回来，引用条还在。
+  const replyTargetsRef = useRef(new Map<string, TimelineReply>());
   const [copiedMessageId, setCopiedMessageId] = useState("");
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [modelsPhase, setModelsPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -873,6 +875,7 @@ export function useDesktopChatController() {
       console.debug("[chat-ui] send frame delivered", { sessionId });
       modelDirtyRef.current = false;
       setModelSelectionDirty(false);
+      for (const [key, value] of replyTargetsRef.current) if (value === reply) replyTargetsRef.current.delete(key);
       setReplyTarget(null);
       return sessionId;
     } catch (error) {
@@ -1049,7 +1052,7 @@ export function useDesktopChatController() {
     setHistoryThroughSeq(cached?.throughSeq ?? null);
     setHistoryBeforeSeq(cached?.beforeSeq ?? null);
     setHistoryHasMore(cached?.hasMore ?? false);
-    setReplyTarget(null);
+    setReplyTarget(replyTargetsRef.current.get(sessionId) ?? null);
     modelDirtyRef.current = false;
     modelEditRef.current += 1;
     modelsSnapshotSessionRef.current = null;
@@ -1126,7 +1129,10 @@ export function useDesktopChatController() {
   }, [loadSessionsSafely, navigationPins, reportError]);
 
 
-  const handleReplyMessage = useCallback((reply: TimelineReply) => setReplyTarget(reply), []);
+  const handleReplyMessage = useCallback((reply: TimelineReply) => {
+    if (activeSessionRef.current) replyTargetsRef.current.set(activeSessionRef.current, reply);
+    setReplyTarget(reply);
+  }, []);
   const handleModelChange = useCallback((runtimeId: string, effort: string) => {
     modelDirtyRef.current = true;
     modelEditRef.current += 1;
@@ -1134,7 +1140,10 @@ export function useDesktopChatController() {
     setSelectedReasoningEffort(effort);
     setModelSelectionDirty(true);
   }, []);
-  const cancelReply = useCallback(() => setReplyTarget(null), []);
+  const cancelReply = useCallback(() => {
+    replyTargetsRef.current.delete(activeSessionRef.current);
+    setReplyTarget(null);
+  }, []);
   const handleCopiedMessage = useCallback((messageId: string) => {
     setCopiedMessageId(messageId);
     window.setTimeout(() => setCopiedMessageId(""), 1200);

@@ -627,10 +627,15 @@
   height: 16px;
 }
 
-:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-code-copy:hover,
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-code-copy[data-copied="true"] {
   color: var(--ak-ink-primary);
   background: var(--ak-paper-sheet);
+}
+@media (hover: hover) {
+  :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-code-copy:hover {
+    color: var(--ak-ink-primary);
+    background: var(--ak-paper-sheet);
+  }
 }
 
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-code-copy:focus-visible {
@@ -653,9 +658,13 @@
   transition: background-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
 }
 
-.message-reply-reference:hover,
 .message-reply-reference:active {
   background: color-mix(in oklch, var(--ak-color-action-primary) 14%, transparent);
+}
+@media (hover: hover) {
+  .message-reply-reference:hover {
+    background: color-mix(in oklch, var(--ak-color-action-primary) 14%, transparent);
+  }
 }
 
 .message-reply-reference:focus-visible {
@@ -1036,6 +1045,12 @@ button.tool-step-summary:active {
   grid-template-rows: 1fr;
 }
 
+/* grid 子项默认 min-width:auto 会被不折行的 diff 撑开（实测一行 1500 字撑到 1 万多像素）；归零后横滚留在结果区内。 */
+.tool-step-disclosure-inner,
+.tool-detail-section {
+  min-width: 0;
+}
+
 .tool-step-disclosure-inner {
   min-height: 0;
   overflow: clip;
@@ -1138,10 +1153,15 @@ button.tool-step-summary:active {
   transition: scale var(--ak-sys-duration-short) var(--ak-sys-motion-standard), background-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
 }
 
-.tool-detail-copy:hover,
 .tool-detail-copy:active {
   scale: 0.96;
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .tool-detail-copy:hover {
+    scale: 0.96;
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .tool-detail-copy.copied {
@@ -1185,6 +1205,15 @@ button.tool-step-summary:active {
 }
 
 /* 统一 diff：增删行用状态色的文字加极淡底色，整行铺满；路径头与 hunk 头退成次级。 */
+/* 每行一个网格项：列宽取最长一行与容器宽的较大者，增删底色整行铺到最右；内容整体横滚。 */
+.tool-result.is-diff {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr);
+  overflow: auto hidden;
+  white-space: pre;
+  overscroll-behavior-x: contain;
+}
+.tool-result.is-diff .tool-diff-line { display: block; }
 .tool-diff-line { display: inline-block; min-inline-size: 100%; }
 .tool-diff-line.is-add {
   color: var(--ak-color-status-success);
@@ -1223,8 +1252,10 @@ button.tool-step-summary:active {
   transition: background-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
 }
 
-.tool-result-more:hover {
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+@media (hover: hover) {
+  .tool-result-more:hover {
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 /* 命令块：$ 命令 → 输出 → 底栏结果与耗时；内部字段收进原始数据。 */
@@ -1369,11 +1400,15 @@ button.tool-step-summary:active {
   transition-timing-function: var(--ak-sys-motion-standard);
 }
 
-.message-attachment-chip:hover,
-.attachment-chip:hover,
 .message-attachment-chip:focus-visible,
 .attachment-chip:focus-visible {
   border-color: color-mix(in oklch, var(--md-sys-color-on-surface) 22%, transparent);
+}
+@media (hover: hover) {
+  .message-attachment-chip:hover,
+  .attachment-chip:hover {
+    border-color: color-mix(in oklch, var(--md-sys-color-on-surface) 22%, transparent);
+  }
 }
 
 .message-attachment-chip.is-media img,
@@ -1521,9 +1556,13 @@ button.tool-step-summary:active {
 }
 
 /* 消息容器 hover/focus-within 显现次要操作；focus-within 同时保证键盘 Tab 到达时可见。 */
-.web-message-anchor:hover .shared-message-actions button,
 .web-message-anchor:focus-within .shared-message-actions button {
   opacity: 1;
+}
+@media (hover: hover) {
+  .web-message-anchor:hover .shared-message-actions button {
+    opacity: 1;
+  }
 }
 
 .shared-message-actions .lucide-reply,
@@ -1531,11 +1570,17 @@ button.tool-step-summary:active {
   translate: 0.5px -0.25px;
 }
 
-.composer-reply > button:hover,
 .composer-reply > button:active {
   scale: 0.96;
   color: var(--md-sys-color-on-surface);
   background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+}
+@media (hover: hover) {
+  .composer-reply > button:hover {
+    scale: 0.96;
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
 }
 
 /* 触屏的 :hover 会在点击后粘住，悬停底色只给真正能悬停的指针；按下反馈两者都有。 */
@@ -1729,7 +1774,9 @@ button.tool-step-summary:active {
 @media (prefers-reduced-motion: reduce) { .connection-status > i { animation: none; } }
 .timeline-control-summary strong, .timeline-result-heading strong { font-size: 0.875rem; }
 .timeline-result-heading button { display: block; min-height: 2.75rem; color: var(--ak-ink-secondary); font-size: 0.8125rem; }
-.timeline-result-heading button:hover { color: var(--ak-ink-primary); }
+@media (hover: hover) {
+  .timeline-result-heading button:hover { color: var(--ak-ink-primary); }
+}
 .timeline-result-heading button:disabled { text-decoration: none; color: var(--ak-color-text-secondary); }
 .timeline-state { color: var(--ak-color-text-secondary); font-size: 0.8125rem; }
 .timeline-meta { flex-wrap: wrap; overflow-wrap: anywhere; }
@@ -1834,7 +1881,9 @@ button.tool-step-summary:active {
   cursor: pointer;
 }
 
-.retry-status > button:hover { background: var(--ak-paper-raised); }
+@media (hover: hover) {
+  .retry-status > button:hover { background: var(--ak-paper-raised); }
+}
 .retry-status > button:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
 
 @media (max-width: 36rem) {
@@ -1862,7 +1911,10 @@ button.tool-step-summary:active {
 .message-figure-download { position: absolute; right: 0; top: 0; display: flex; width: 40px; min-height: 40px; align-items: center; justify-content: center;
   color: var(--ak-color-text-secondary); font-size: 0.8125rem; text-underline-offset: 3px; opacity: 0;
   transition: opacity var(--ak-sys-duration-short, 150ms); }
-.message-figure:hover .message-figure-download, .message-figure:focus-within .message-figure-download { opacity: 1; }
+.message-figure:focus-within .message-figure-download { opacity: 1; }
+@media (hover: hover) {
+  .message-figure:hover .message-figure-download { opacity: 1; }
+}
 .message-figure-download:focus-visible { outline: 2px solid var(--ak-color-action-primary); outline-offset: 2px; }
 .attachment-description p:last-child { margin-bottom: 0; }
 @media (hover: none), (max-width: 820px) { .message-figure-download { width: 44px; min-height: 44px; opacity: 1; } }

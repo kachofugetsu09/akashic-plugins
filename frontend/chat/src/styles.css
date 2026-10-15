@@ -161,10 +161,14 @@ input {
   transition: opacity var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
 }
 
-.chat-sidebar__resizer:hover::after,
 .chat-sidebar__resizer:focus-visible::after,
 .chat-sidebar__resizer[data-dragging]::after {
   opacity: 1;
+}
+@media (hover: hover) {
+  .chat-sidebar__resizer:hover::after {
+    opacity: 1;
+  }
 }
 
 .chat-sidebar__resizer:focus-visible {
@@ -251,18 +255,26 @@ input {
   color: var(--chat-muted);
 }
 
-.chat-sidebar__new:hover,
 .chat-sidebar__new:focus-visible,
-.conversation-heading__new:hover,
 .conversation-heading__new:focus-visible {
   background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
 }
+@media (hover: hover) {
+  .chat-sidebar__new:hover,
+  .conversation-heading__new:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+  }
+}
 
-.chat-sidebar__new:hover svg,
 .chat-sidebar__new:focus-visible svg,
-.conversation-heading__new:hover svg,
 .conversation-heading__new:focus-visible svg {
   color: var(--chat-ink);
+}
+@media (hover: hover) {
+  .chat-sidebar__new:hover svg,
+  .conversation-heading__new:hover svg {
+    color: var(--chat-ink);
+  }
 }
 
 .chat-sidebar__new:focus-visible,
@@ -313,14 +325,22 @@ input {
   color: var(--chat-muted);
 }
 
-.chat-sidebar__action:hover,
 .chat-sidebar__action:focus-visible {
   background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
 }
+@media (hover: hover) {
+  .chat-sidebar__action:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+  }
+}
 
-.chat-sidebar__action:hover svg,
 .chat-sidebar__action:focus-visible svg {
   color: var(--chat-ink);
+}
+@media (hover: hover) {
+  .chat-sidebar__action:hover svg {
+    color: var(--chat-ink);
+  }
 }
 
 .chat-sidebar__action:focus-visible {
@@ -501,11 +521,15 @@ input {
   padding-inline: 10px;
 }
 
-.chat-sidebar--entry .conversation-session:hover,
 .chat-sidebar--entry .conversation-session:focus-visible,
-.chat-sidebar--entry .navigation-menu-row:hover > .conversation-session:not(.active),
 .chat-sidebar--entry .navigation-menu-row[data-menu-open] > .conversation-session:not(.active) {
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .chat-sidebar--entry .conversation-session:hover,
+  .chat-sidebar--entry .navigation-menu-row:hover > .conversation-session:not(.active) {
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .chat-sidebar--entry .conversation-session.active {
@@ -528,10 +552,15 @@ input {
   color: var(--chat-muted);
 }
 
-.chat-sidebar--entry .conversation-navigation__action:hover,
 .chat-sidebar--entry .conversation-navigation__action:focus-visible {
   color: var(--chat-ink);
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .chat-sidebar--entry .conversation-navigation__action:hover {
+    color: var(--chat-ink);
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .chat-sidebar--entry .conversation-navigation__action.primary {
@@ -630,7 +659,9 @@ input {
 
 .navigation-menu-trigger:focus-visible { outline: 2px solid var(--ak-rule-focus); }
 /* ⋯ 是行的从属动作：悬停只加深图标，不再给自己铺一块独立的纸色瓷砖。 */
-.navigation-menu-trigger:hover { color: var(--ak-ink-primary); }
+@media (hover: hover) {
+  .navigation-menu-trigger:hover { color: var(--ak-ink-primary); }
+}
 
 .navigation-row-menu {
   min-width: min(11rem, calc(100vw - 24px));
@@ -776,10 +807,15 @@ input {
   cursor: pointer;
 }
 
-.project-navigation__icon:hover,
 .project-navigation__icon:focus-visible {
   color: var(--chat-ink);
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .project-navigation__icon:hover {
+    color: var(--chat-ink);
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .project-pending {
@@ -829,13 +865,17 @@ input {
   color: var(--chat-muted);
 }
 
-.project-navigation__empty:hover,
-.project-group__open:hover,
-.project-session:hover,
 .project-navigation__empty:focus-visible,
 .project-group__open:focus-visible,
 .project-session:focus-visible {
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .project-navigation__empty:hover,
+  .project-group__open:hover,
+  .project-session:hover {
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .project-group__row {
@@ -859,9 +899,13 @@ input {
   cursor: pointer;
 }
 
-.project-group__toggle:hover,
 .project-group__toggle:focus-visible {
   background: var(--chat-chip);
+}
+@media (hover: hover) {
+  .project-group__toggle:hover {
+    background: var(--chat-chip);
+  }
 }
 
 .project-group__open {
@@ -1021,8 +1065,10 @@ input {
   font-size: 0.875rem;
   cursor: pointer;
 }
-.project-dialog__memory-trigger:hover,
 .project-dialog__memory-trigger[data-state="open"] { background: var(--ak-paper-sheet); }
+@media (hover: hover) {
+  .project-dialog__memory-trigger:hover { background: var(--ak-paper-sheet); }
+}
 .project-memory-menu {
   width: min(340px, calc(100vw - 32px));
   z-index: 60;
@@ -1145,10 +1191,12 @@ input {
   transition-timing-function: var(--ak-sys-motion-standard);
 }
 
-.icon-button:hover,
-.composer-tool:hover {
-  color: var(--md-sys-color-on-surface);
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+@media (hover: hover) {
+  .icon-button:hover,
+  .composer-tool:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
 }
 
 .icon-button:active,
@@ -1350,6 +1398,7 @@ input {
   gap: 20px;
   padding-block: 1.5rem calc(
     var(--composer-compact-h)
+    + var(--composer-grown, 0px)
     + var(--composer-dock-gap)
     + var(--composer-stats-line)
     + 1rem
@@ -1381,7 +1430,9 @@ input {
   cursor: pointer;
 }
 
-.desktop-history-loader button:hover { background: var(--chat-chip); color: var(--chat-ink); }
+@media (hover: hover) {
+  .desktop-history-loader button:hover { background: var(--chat-chip); color: var(--chat-ink); }
+}
 .desktop-history-loader button:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
 
 .desktop-history-loader [role="status"] { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--chat-muted); }
@@ -1415,6 +1466,7 @@ input {
   translate: -50% 0;
   bottom: calc(
     var(--composer-compact-h)
+    + var(--composer-grown, 0px)
     + var(--composer-dock-gap)
     + var(--composer-stats-line)
     + 2.25rem
@@ -1546,8 +1598,10 @@ input {
   transition: box-shadow var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
 }
 
-.model-connection-state a:hover {
-  box-shadow: 0 1px 3px rgb(var(--md-sys-color-shadow-rgb) / 0.18);
+@media (hover: hover) {
+  .model-connection-state a:hover {
+    box-shadow: 0 1px 3px rgb(var(--md-sys-color-shadow-rgb) / 0.18);
+  }
 }
 
 .model-connection-state a:focus-visible {
@@ -1906,9 +1960,17 @@ form.composer:focus-within [data-slot="input-group"] {
   transition-timing-function: var(--ak-sys-motion-standard);
 }
 
-.composer-attachments .group:hover .attachment-remove-inline,
 .composer-attachments .group:focus-within .attachment-remove-inline {
   opacity: 1;
+}
+@media (hover: hover) {
+  .composer-attachments .group:hover .attachment-remove-inline {
+    opacity: 1;
+  }
+}
+/* 没有悬停的设备上移除钮常显，否则只能靠碰巧粘住的 hover 才找得到。 */
+@media (hover: none) {
+  .composer-attachments .attachment-remove-inline { opacity: 1; }
 }
 
 .attachment-hover {
@@ -2041,9 +2103,13 @@ form.composer:focus-within [data-slot="input-group"] {
     box-shadow: none;
   }
 
-  .compact-navigation-trigger:hover,
   .compact-navigation-trigger:focus-visible {
     background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+  }
+  @media (hover: hover) {
+    .compact-navigation-trigger:hover {
+      background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+    }
   }
 
   .compact-navigation-overlay {
@@ -2144,10 +2210,15 @@ form.composer:focus-within [data-slot="input-group"] {
   transition-timing-function: var(--ak-sys-motion-standard);
 }
 
-.model-picker__trigger:hover,
 .model-picker.is-open .model-picker__trigger {
   color: var(--md-sys-color-on-surface);
   background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+}
+@media (hover: hover) {
+  .model-picker__trigger:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+  }
 }
 
 .model-picker__trigger:focus-visible {
@@ -2275,9 +2346,13 @@ form.composer:focus-within [data-slot="input-group"] {
   margin-block-start: 1px;
 }
 
-.model-picker__option:hover,
 .model-picker__option:focus-visible {
   background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+}
+@media (hover: hover) {
+  .model-picker__option:hover {
+    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  }
 }
 
 .model-picker__option.is-selected:not(:hover):not(:focus-visible) {
@@ -2352,15 +2427,21 @@ form.composer:focus-within [data-slot="input-group"] {
   transition-duration: var(--ak-sys-duration-short);
 }
 
-.model-picker__option:hover .model-picker__star,
 .model-picker__option:focus-within .model-picker__star,
 .model-picker__star:focus-visible,
 .model-picker__star.is-favorite {
   opacity: 1;
 }
+@media (hover: hover) {
+  .model-picker__option:hover .model-picker__star {
+    opacity: 1;
+  }
+}
 
-.model-picker__star:hover {
-  color: var(--md-sys-color-on-surface);
+@media (hover: hover) {
+  .model-picker__star:hover {
+    color: var(--md-sys-color-on-surface);
+  }
 }
 
 .model-picker__star.is-favorite svg {
@@ -2405,10 +2486,15 @@ form.composer:focus-within [data-slot="input-group"] {
   transition-timing-function: var(--ak-sys-motion-standard);
 }
 
-.model-effort__trigger:hover,
 .model-effort.is-open .model-effort__trigger {
   color: var(--md-sys-color-on-surface);
   background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+}
+@media (hover: hover) {
+  .model-effort__trigger:hover {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+  }
 }
 
 .model-effort__trigger:focus-visible {
@@ -2950,6 +3036,10 @@ form.composer:focus-within [data-slot="input-group"] {
   .chat-main,
   :root[data-embedded-shell="true"] .chat-main { overflow-y: auto; }
   .chat-main .conversation { flex: none; block-size: max(120px, 60dvh); }
+  /* 输入区已在文档流里，不再浮在消息上：底部不必再给它预留一张卡的高度，矮屏每一行都要省。 */
+  .chat-main .conversation-content { padding-block-end: 1rem; }
+  /* 回到底部按钮同理贴消息区底部：再叠加输入卡高度与增高量，会被推出只有 60dvh 的消息区。 */
+  .chat-main .desktop-scroll-return { bottom: 12px; }
   .chat-main .composer-wrap,
   .chat-main .composer-wrap.home { position: relative; inset: auto; inline-size: auto; flex: none; margin: 8px var(--chat-dock-inset); }
   .chat-main .composer-wrap::before { display: none; }
@@ -3003,7 +3093,10 @@ form.composer:focus-within [data-slot="input-group"] {
 .directory-marker__trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .directory-marker__trigger svg { flex: 0 0 auto; }
 
-.directory-marker__trigger:hover, .directory-marker__trigger[aria-expanded="true"] { color: var(--chat-ink); }
+.directory-marker__trigger[aria-expanded="true"] { color: var(--chat-ink); }
+@media (hover: hover) {
+  .directory-marker__trigger:hover { color: var(--chat-ink); }
+}
 .directory-marker__trigger[data-alert] { color: var(--ak-color-status-error); }
 .directory-marker__trigger:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
 .directory-marker__panel { position: absolute; z-index: 20; inset-block-start: calc(100% + 4px); inset-inline-end: 0; display: grid; gap: 8px; inline-size: min(26rem, calc(100vw - 32px)); padding: 12px; border: 1px solid var(--chat-line); border-radius: 10px; background: var(--ak-paper-canvas); box-shadow: 0 8px 24px color-mix(in oklch, var(--ak-ink-primary) 12%, transparent); color: var(--chat-muted); line-height: 1.5; }
@@ -3011,7 +3104,9 @@ form.composer:focus-within [data-slot="input-group"] {
 .directory-marker__panel code.directory-path { display: block; padding: 6px 8px; border-radius: 6px; background: var(--chat-chip); color: var(--chat-ink); }
 .directory-marker__actions { display: flex; gap: 4px; margin-inline-start: -8px; }
 .directory-marker__actions button { min-height: 32px; padding-inline: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--chat-muted); font: inherit; cursor: pointer; }
-.directory-marker__actions button:hover { background: var(--chat-chip); color: var(--chat-ink); }
+@media (hover: hover) {
+  .directory-marker__actions button:hover { background: var(--chat-chip); color: var(--chat-ink); }
+}
 .directory-marker__actions button:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
 
 /* 紧凑外壳标题优先（放在目录标记全部基础规则之后，同特异性靠顺序覆盖）：工作目录只留文件夹图标（点开仍看完整路径），标题拿走剩余宽度。 */

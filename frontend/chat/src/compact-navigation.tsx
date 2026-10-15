@@ -5,6 +5,9 @@ import { DesktopSidebar, type DesktopSidebarProps } from "./desktop-sidebar";
 import { NewProjectDialog } from "./project-navigation";
 import { reportShellOverlay } from "./shell-rail-actions";
 
+// 与 styles.css 紧凑外壳媒体块同一条件：不再满足时常驻侧栏回来，抽屉没有存在的理由。
+const COMPACT_SHELL = "(max-width: 820px), (max-height: 30rem) and (pointer: coarse)";
+
 /** Expose the desktop navigation contract as a modal drawer on narrow viewports. */
 export function CompactNavigation(props: DesktopSidebarProps) {
   const [open, setOpen] = useState(false);
@@ -19,6 +22,14 @@ export function CompactNavigation(props: DesktopSidebarProps) {
     action();
   }, []);
   const overlayOpen = open || projectDialogOpen;
+  // 必要 effect：平板旋转、分屏拖宽时视口离开紧凑断点，抽屉藏了但模态遮罩还压着整页，必须跟着关掉。
+  useEffect(() => {
+    if (!open) return;
+    const compact = window.matchMedia(COMPACT_SHELL);
+    const onChange = () => { if (!compact.matches) setOpen(false); };
+    compact.addEventListener("change", onChange);
+    return () => compact.removeEventListener("change", onChange);
+  }, [open]);
   useEffect(() => {
     if (!overlayOpen) return;
     reportShellOverlay(true);
