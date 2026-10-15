@@ -11,13 +11,13 @@
 /* 滚动条统一收细:轨道透明不抢纸面,thumb 取墨色低透明度,悬停加深一档。
    全局只在这一处声明,阅读列与 composer 同步变化,不破坏两侧对齐基准。 */
 * {
-  scrollbar-color: color-mix(in oklch, var(--ak-ink-primary) 22%, transparent) transparent;
+  scrollbar-color: color-mix(in oklab, var(--ak-ink-primary) 22%, transparent) transparent;
   scrollbar-width: thin;
 }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { border-radius: 4px; background: color-mix(in oklch, var(--ak-ink-primary) 22%, transparent); }
-*::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--ak-ink-primary) 34%, transparent); }
+*::-webkit-scrollbar-thumb { border-radius: 4px; background: color-mix(in oklab, var(--ak-ink-primary) 22%, transparent); }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--ak-ink-primary) 34%, transparent); }
 
 html,
 body,
@@ -46,7 +46,7 @@ input {
 
 /* 选区跟随主色的淡底、保留原文字色：浏览器默认的亮蓝白字在纸面上太刺眼。 */
 ::selection {
-  background: color-mix(in oklch, var(--ak-rule-focus) 22%, transparent);
+  background: color-mix(in oklab, var(--ak-rule-focus) 22%, transparent);
   color: inherit;
 }
 
@@ -269,12 +269,12 @@ input {
 
 .chat-sidebar__new:focus-visible,
 .conversation-heading__new:focus-visible {
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
 }
 @media (hover: hover) {
   .chat-sidebar__new:hover,
   .conversation-heading__new:hover {
-    background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
   }
 }
 
@@ -297,7 +297,7 @@ input {
 
 .chat-sidebar__new:active,
 .conversation-heading__new:active {
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 8%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, transparent);
 }
 
 /* 底部动作：宿主 Shell 经桥下发的动作行，图标/文字落在同一条左竖线。 */
@@ -338,11 +338,11 @@ input {
 }
 
 .chat-sidebar__action:focus-visible {
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
 }
 @media (hover: hover) {
   .chat-sidebar__action:hover {
-    background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
   }
 }
 
@@ -361,7 +361,7 @@ input {
 }
 
 .chat-sidebar__action:active {
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 8%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, transparent);
 }
 
 /* 主题行右端的键盘图标：只在有键盘与指针的宽屏出现，触屏不占位。 */
@@ -383,7 +383,7 @@ input {
     background: transparent;
     cursor: pointer;
   }
-  .chat-sidebar__shortcuts:hover { color: var(--chat-ink); background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent); }
+  .chat-sidebar__shortcuts:hover { color: var(--chat-ink); background: color-mix(in oklab, var(--ak-ink-primary) 6%, transparent); }
   .chat-sidebar__shortcuts:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
 }
 
@@ -464,6 +464,28 @@ input {
   outline: none;
 }
 
+.chat-sidebar__search-clear {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  margin-inline-end: -4px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  color: var(--chat-muted);
+  background: transparent;
+  cursor: pointer;
+}
+@media (hover: hover) { .chat-sidebar__search-clear:hover { color: var(--chat-ink); background: var(--chat-chip); } }
+.chat-sidebar__search-clear:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 1px; }
+/* 触屏热区 44px，图形不变；向外扩到搜索框边缘，不撑高搜索框。 */
+@media (pointer: coarse) {
+  .chat-sidebar__search-clear { position: relative; }
+  .chat-sidebar__search-clear::after { position: absolute; inset: -10px -10px; content: ""; }
+}
+
 .chat-sidebar__search input::placeholder {
   color: var(--chat-faint);
 }
@@ -535,18 +557,18 @@ input {
 
 .chat-sidebar--entry .conversation-session:focus-visible,
 .chat-sidebar--entry .navigation-menu-row[data-menu-open] > .conversation-session:not(.active) {
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
 }
 @media (hover: hover) {
   .chat-sidebar--entry .conversation-session:hover,
   .chat-sidebar--entry .navigation-menu-row:hover > .conversation-session:not(.active) {
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
   }
 }
 
 .chat-sidebar--entry .conversation-session.active {
   color: var(--chat-ink);
-  background: color-mix(in oklch, var(--ak-ink-primary) 8%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 8%, transparent);
 }
 
 .chat-sidebar--entry .conversation-session__title strong {
@@ -566,12 +588,12 @@ input {
 
 .chat-sidebar--entry .conversation-navigation__action:focus-visible {
   color: var(--chat-ink);
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
 }
 @media (hover: hover) {
   .chat-sidebar--entry .conversation-navigation__action:hover {
     color: var(--chat-ink);
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
   }
 }
 
@@ -714,7 +736,7 @@ input {
 
 .navigation-row-menu__item--danger { color: var(--ak-color-status-error); }
 .navigation-row-menu__item--danger[data-highlighted] {
-  background: color-mix(in oklch, var(--ak-color-status-error) 8%, transparent);
+  background: color-mix(in oklab, var(--ak-color-status-error) 8%, transparent);
 }
 
 /* 删除后的撤销窗口：导航区内一行就地提示，不是 toast，不遮挡消息区。 */
@@ -821,12 +843,12 @@ input {
 
 .project-navigation__icon:focus-visible {
   color: var(--chat-ink);
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
 }
 @media (hover: hover) {
   .project-navigation__icon:hover {
     color: var(--chat-ink);
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
   }
 }
 
@@ -880,13 +902,13 @@ input {
 .project-navigation__empty:focus-visible,
 .project-group__open:focus-visible,
 .project-session:focus-visible {
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
 }
 @media (hover: hover) {
   .project-navigation__empty:hover,
   .project-group__open:hover,
   .project-session:hover {
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
   }
 }
 
@@ -1007,7 +1029,7 @@ input {
 }
 
 .project-session.active {
-  background: color-mix(in oklch, var(--ak-ink-primary) 8%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 8%, transparent);
 }
 
 @media (max-width: 820px), (hover: none) {
@@ -1773,37 +1795,6 @@ input {
   box-shadow: none;
 }
 
-/* 文件拖拽强调态：焦点色虚线边框 + 容器内轻提示；深浅计数去抖在 desktop-composer 侧。
-   放在 :focus-within 之后，同特异性下拖拽态优先于聚焦态。 */
-.composer.is-drop-target {
-  border-color: var(--ak-rule-focus);
-  border-style: dashed;
-}
-
-.composer .composer-drop-hint {
-  position: absolute;
-  /* 与 1px 边框内缘对齐，不遮盖虚线强调。 */
-  inset: 1px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in oklch, var(--chat-lift, var(--ak-paper-editing)) 86%, transparent);
-  color: var(--chat-faint, var(--ak-ink-muted));
-  font-size: var(--chat-type-caption);
-  line-height: 1.2;
-  pointer-events: none;
-  user-select: none;
-}
-
-.composer.is-compact .composer-drop-hint {
-  border-radius: var(--composer-compact-radius);
-}
-
-.composer.is-expanded .composer-drop-hint {
-  border-radius: var(--composer-expanded-radius);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .composer {
     transition-duration: 0ms;
@@ -1894,10 +1885,15 @@ form.composer:focus-within [data-slot="input-group"] {
   gap: 4px;
 }
 
+/* 输入框随内容长高：写代码时常整段粘贴，上限按视口取 30%（120–320px，约 5–13 行），超出才在框内滚动；
+   键盘弹起后 dvh 变小，上限随之回落到 120px，不把对话挤没。 */
+.composer {
+  --composer-text-max: clamp(120px, 30dvh, 320px);
+}
 .composer textarea,
 .composer .composer__textarea {
   min-height: 20px;
-  max-height: 120px;
+  max-height: var(--composer-text-max);
   resize: none;
   border: 0;
   padding: 2px 2px;
@@ -1923,116 +1919,13 @@ form.composer:focus-within [data-slot="input-group"] {
 .composer.is-expanded .composer__textarea {
   field-sizing: content;
   height: auto;
-  max-height: 120px;
+  max-height: var(--composer-text-max);
   line-height: 1.5;
   padding-block: 2px;
 }
 
 .composer textarea::placeholder {
   color: var(--md-sys-color-on-surface-variant);
-}
-
-.composer-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  grid-column: 1 / -1;
-  width: 100%;
-  padding: 2px 2px 8px;
-}
-
-.composer-attachments [data-radix-collection-item],
-.composer-attachments .group {
-  max-width: none;
-}
-
-.composer-attachments .attachment-chip,
-.composer-attachments .message-attachment-chip {
-  border-color: color-mix(in oklch, var(--md-sys-color-on-surface) 14%, transparent);
-  background: var(--md-sys-color-surface-container-low);
-  color: var(--md-sys-color-on-surface);
-}
-
-.attachment-preview-slot {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  flex: 0 0 auto;
-}
-
-.attachment-preview-icon,
-.attachment-remove-inline {
-  position: absolute;
-  inset: 0;
-}
-
-.attachment-preview-icon {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.attachment-preview-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.attachment-remove-inline {
-  inset: auto 4px 4px auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 72%, transparent);
-  color: var(--md-sys-color-surface);
-  opacity: 0;
-  transition-property: opacity;
-  transition-duration: var(--ak-sys-duration-short);
-  transition-timing-function: var(--ak-sys-motion-standard);
-}
-
-.composer-attachments .group:focus-within .attachment-remove-inline {
-  opacity: 1;
-}
-@media (hover: hover) {
-  .composer-attachments .group:hover .attachment-remove-inline {
-    opacity: 1;
-  }
-}
-/* 没有悬停的设备上移除钮常显，否则只能靠碰巧粘住的 hover 才找得到。 */
-@media (hover: none) {
-  .composer-attachments .attachment-remove-inline { opacity: 1; }
-}
-
-.attachment-hover {
-  max-width: 320px;
-  color: var(--ak-color-text-primary);
-}
-
-.attachment-hover-image {
-  display: block;
-  max-width: 320px;
-  max-height: 240px;
-  border-radius: 8px;
-  object-fit: contain;
-}
-
-/* 悬停卡就是用来看全名的：完整换行，不再单行省略。 */
-.attachment-hover-title {
-  font-size: var(--chat-type-section);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.attachment-hover-image + .attachment-hover-title {
-  margin-top: 10px;
-}
-
-.attachment-hover-type {
-  margin-top: 4px;
-  color: var(--ak-color-text-secondary);
-  font-family: var(--ak-type-technical, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: var(--chat-type-micro);
 }
 
 .composer [data-slot="input-group-addon"] {
@@ -2048,7 +1941,7 @@ form.composer:focus-within [data-slot="input-group"] {
   /* 与编辑区文字对齐：wrap 左缘 + --composer-text-inset。 */
   margin: 0;
   padding-inline-start: var(--composer-text-inset, 16px);
-  color: color-mix(in oklch, var(--chat-faint, var(--ak-ink-muted)) 78%, transparent);
+  color: color-mix(in oklab, var(--chat-faint, var(--ak-ink-muted)) 78%, transparent);
   /* 中文状态句不用等宽字体（汉字会被拉开）；数字等宽，逐秒刷新不抖。 */
   font-size: var(--chat-type-caption);
   font-variant-numeric: tabular-nums;
@@ -2096,6 +1989,24 @@ form.composer:focus-within [data-slot="input-group"] {
 .composer-wrap > .error-line {
   margin-block-start: 0.25rem;
 }
+
+/* 快捷键复制的结果：浮在输入卡上方左侧（回到底部按钮在正中），出现与消失不改变输入区高度。 */
+.copy-notice {
+  position: absolute;
+  inset-block-end: calc(100% + 8px);
+  inset-inline-start: 12px;
+  margin: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: var(--ak-ink-secondary);
+  background: var(--ak-paper-sheet);
+  box-shadow: 0 0 0 1px var(--ak-rule-subtle), 0 4px 12px color-mix(in oklab, var(--ak-ink-primary) 8%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  pointer-events: none;
+  transition: opacity var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
+}
+.copy-notice:empty { opacity: 0; box-shadow: none; padding: 0; }
 
 .error-line {
   display: flex;
@@ -2151,11 +2062,11 @@ form.composer:focus-within [data-slot="input-group"] {
   }
 
   .compact-navigation-trigger:focus-visible {
-    background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
   }
   @media (hover: hover) {
     .compact-navigation-trigger:hover {
-      background: color-mix(in oklch, var(--md-sys-color-on-surface) 6%, transparent);
+      background: color-mix(in oklab, var(--md-sys-color-on-surface) 6%, transparent);
     }
   }
 
@@ -2259,12 +2170,12 @@ form.composer:focus-within [data-slot="input-group"] {
 
 .model-picker.is-open .model-picker__trigger {
   color: var(--md-sys-color-on-surface);
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 5%, transparent);
 }
 @media (hover: hover) {
   .model-picker__trigger:hover {
     color: var(--md-sys-color-on-surface);
-    background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 5%, transparent);
   }
 }
 
@@ -2276,7 +2187,7 @@ form.composer:focus-within [data-slot="input-group"] {
 .model-picker__trigger:active { scale: 0.96; }
 
 .model-picker__trigger:disabled {
-  color: color-mix(in oklch, var(--ak-ink-primary) 38%, transparent);
+  color: color-mix(in oklab, var(--ak-ink-primary) 38%, transparent);
   cursor: default;
 }
 
@@ -2367,17 +2278,6 @@ form.composer:focus-within [data-slot="input-group"] {
   letter-spacing: 0.02em;
 }
 
-.model-picker__group-title > span {
-  display: grid;
-  min-width: 1.1rem;
-  min-height: 1.1rem;
-  place-items: center;
-  margin-inline-start: auto;
-  border-radius: var(--md-sys-shape-corner-full);
-  color: var(--ak-ink-secondary);
-  background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent);
-}
-
 .model-picker__option {
   display: flex;
   align-items: flex-start;
@@ -2394,16 +2294,16 @@ form.composer:focus-within [data-slot="input-group"] {
 }
 
 .model-picker__option:focus-visible {
-  background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
 }
 @media (hover: hover) {
   .model-picker__option:hover {
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
   }
 }
 
 .model-picker__option.is-selected:not(:hover):not(:focus-visible) {
-  background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent);
+  background: color-mix(in oklab, var(--ak-ink-primary) 6%, transparent);
 }
 
 .model-picker__check {
@@ -2542,12 +2442,12 @@ form.composer:focus-within [data-slot="input-group"] {
 
 .model-effort.is-open .model-effort__trigger {
   color: var(--md-sys-color-on-surface);
-  background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 5%, transparent);
 }
 @media (hover: hover) {
   .model-effort__trigger:hover {
     color: var(--md-sys-color-on-surface);
-    background: color-mix(in oklch, var(--md-sys-color-on-surface) 5%, transparent);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 5%, transparent);
   }
 }
 
@@ -2559,12 +2459,12 @@ form.composer:focus-within [data-slot="input-group"] {
 .model-effort__trigger:active { scale: 0.96; }
 
 .model-effort__trigger:disabled {
-  color: color-mix(in oklch, var(--ak-ink-primary) 38%, transparent);
+  color: color-mix(in oklab, var(--ak-ink-primary) 38%, transparent);
   cursor: default;
 }
 
 .model-effort.is-active .model-effort__trigger {
-  color: color-mix(in oklch, var(--ak-ink-primary) 85%, transparent);
+  color: color-mix(in oklab, var(--ak-ink-primary) 85%, transparent);
 }
 
 .model-effort__panel {
@@ -2578,6 +2478,11 @@ form.composer:focus-within [data-slot="input-group"] {
   border-radius: 12px;
   background: var(--ak-paper-raised);
 }
+
+/* 强度选项只有一行档名：桌面紧凑 36px，触屏按 44px 触控目标，文字垂直居中。 */
+.model-effort__option { min-height: 36px; align-items: center; }
+.model-effort__option .model-picker__check { margin-block-start: 0; }
+@media (pointer: coarse) { .model-effort__option { min-height: 44px; } }
 
 .model-effort__list {
   overflow-y: auto;
@@ -2701,7 +2606,7 @@ form.composer:focus-within [data-slot="input-group"] {
     border: 1px solid var(--ak-rule-default);
     border-radius: 12px;
     background: var(--ak-paper-raised);
-    box-shadow: 0 6px 24px color-mix(in oklch, var(--ak-ink-primary) 12%, transparent);
+    box-shadow: 0 6px 24px color-mix(in oklab, var(--ak-ink-primary) 12%, transparent);
     opacity: 0;
     pointer-events: none;
     translate: 0 -50%;
@@ -2724,7 +2629,6 @@ form.composer:focus-within [data-slot="input-group"] {
     font: inherit;
     font-size: 0.8125rem;
     text-align: start;
-    text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
   }
@@ -2748,8 +2652,8 @@ form.composer:focus-within [data-slot="input-group"] {
   border-radius: 999px;
   background: var(--ak-paper-editing);
   color: var(--ak-ink-primary);
-  box-shadow: 0 1px 2px color-mix(in oklch, var(--ak-ink-primary) 8%, transparent),
-    0 4px 14px color-mix(in oklch, var(--ak-ink-primary) 12%, transparent);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ak-ink-primary) 8%, transparent),
+    0 4px 14px color-mix(in oklab, var(--ak-ink-primary) 12%, transparent);
   font: inherit;
   font-size: 0.8125rem;
   cursor: pointer;
@@ -2950,7 +2854,7 @@ form.composer:focus-within [data-slot="input-group"] {
   .chat-main .composer.is-expanded .composer-action-button:disabled {
     color: var(--chat-muted);
     /* 空草稿的发送钮只是一块淡墨底，不再描一圈边框与输入卡外框抢轮廓。 */
-    background: color-mix(in oklch, var(--ak-ink-primary) 5%, transparent);
+    background: color-mix(in oklab, var(--ak-ink-primary) 5%, transparent);
     box-shadow: none;
     opacity: 1;
   }
@@ -3108,13 +3012,8 @@ form.composer:focus-within [data-slot="input-group"] {
   .chat-main .conversation-content { padding-block-end: 1rem; }
   /* 回到底部按钮同理贴消息区底部：再叠加输入卡高度与增高量，会被推出只有 60dvh 的消息区。 */
   .chat-main .desktop-scroll-return { bottom: 12px; }
-  /* 键盘弹起后（安卓按 resizes-content 缩小视口）整屏只剩 400px 上下：引用、附件、长草稿叠在一起不能把正文框挤出屏幕。 */
-  .chat-main .composer-attachments { padding-block-end: 4px; }
-  .chat-main .composer-attachments .attachment-chip.is-media { --chat-chip-size: 56px; }
-  /* 文件块不能只缩外壳：改成 56px 高的横条，文件名两行，扩展名与大小让位，右侧留出移除钮。 */
-  .chat-main .composer-attachments .attachment-chip.is-file { width: 9rem; height: 56px; padding: 6px 30px 6px 8px; }
-  .chat-main .composer-attachments .attachment-chip.is-file .attachment-file-name { -webkit-line-clamp: 2; }
-  .chat-main .composer-attachments .attachment-chip.is-file :is(.attachment-file-ext, .attachment-file-ext-icon, .attachment-file-size) { display: none; }
+  /* 键盘弹起后（安卓按 resizes-content 缩小视口）整屏只剩 400px 上下：附件托盘本来就只占一行，再收 8px 底距。 */
+  .chat-main .composer-tray { padding-block-end: 0; }
   .chat-main .composer.is-expanded textarea,
   .chat-main .composer.is-expanded .composer__textarea { max-height: 4.5rem; }
   .chat-main .composer-wrap,
@@ -3178,7 +3077,7 @@ form.composer:focus-within [data-slot="input-group"] {
 }
 .directory-marker__trigger[data-alert] { color: var(--ak-color-status-error); }
 .directory-marker__trigger:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
-.directory-marker__panel { position: absolute; z-index: 20; inset-block-start: calc(100% + 4px); inset-inline-end: 0; display: grid; gap: 8px; inline-size: min(26rem, calc(100vw - 32px)); padding: 12px; border: 1px solid var(--chat-line); border-radius: 10px; background: var(--ak-paper-canvas); box-shadow: 0 8px 24px color-mix(in oklch, var(--ak-ink-primary) 12%, transparent); color: var(--chat-muted); line-height: 1.5; }
+.directory-marker__panel { position: absolute; z-index: 20; inset-block-start: calc(100% + 4px); inset-inline-end: 0; display: grid; gap: 8px; inline-size: min(26rem, calc(100vw - 32px)); padding: 12px; border: 1px solid var(--chat-line); border-radius: 10px; background: var(--ak-paper-canvas); box-shadow: 0 8px 24px color-mix(in oklab, var(--ak-ink-primary) 12%, transparent); color: var(--chat-muted); line-height: 1.5; }
 .directory-marker__panel p { margin: 0; text-wrap: pretty; }
 .directory-marker__panel code.directory-path { display: block; padding: 6px 8px; border-radius: 6px; background: var(--chat-chip); color: var(--chat-ink); }
 .directory-marker__actions { display: flex; gap: 4px; margin-inline-start: -8px; }
@@ -3212,3 +3111,31 @@ form.composer:focus-within [data-slot="input-group"] {
 .project-dialog__directory-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .project-dialog__directory-choice > span { flex-basis: 100%; }
 .project-dialog__directory-choice button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--ak-rule-default); border-radius: 8px; color: inherit; background: transparent; }
+
+/* 强制颜色（Windows 高对比度）下背景色统一换成系统底色：只靠底色表达的东西会整片消失。
+   标记类图形（品牌、会话状态、轮次刻度、后台任务点）保留形状，用文本色画；当前行、用户气泡改用系统色的描边；
+   输入卡外框本身是边框，内层输入组那圈多出来的描边去掉，聚焦改由外框的高亮描边表达。 */
+@media (forced-colors: active) {
+  .chat-sidebar__mark,
+  .session-status-dot,
+  .session-swirl > i,
+  .turn-rail__ticks i,
+  .turn-rail:hover .turn-rail__ticks i,
+  .job-list__dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  /* 悬停规则的特异性更高，这里按同一选择器再写一遍，否则悬停时当前刻度回到半透明墨色、在系统黑底上看不见。 */
+  .turn-rail__ticks i[data-active],
+  .turn-rail:hover .turn-rail__ticks i[data-active] { background: Highlight; }
+  :is(.conversation-session, .project-session, .conversation-destination).active,
+  .project-group.active > .project-group__row,
+  .model-picker__option.is-selected {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .user-bubble { border: 1px solid CanvasText; }
+  .composer [data-slot="input-group"],
+  .composer textarea:focus-visible { outline: none; }
+  .composer:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
+}

@@ -242,6 +242,7 @@ function ShortcutsDialog({ open, onOpenChange, returnFocus }: { open: boolean; o
       ["停止生成", ["Esc"]],
       ["取回上一条提问（输入框为空时）", ["↑"]],
       ["在输入框里翻看对话", ["PageUp", "PageDown"]],
+      ["复制对话里最后一个代码块", [mod, "Shift", ";"]],
       ["阅读时直接打字，进入输入框", ["任意字符"]],
     ] },
     { title: "导航", items: [
@@ -556,6 +557,11 @@ export const DesktopSidebar = memo(function DesktopSidebar({
             aria-keyshortcuts={`${SHORTCUT_MOD === "⌘" ? "Meta" : "Control"}+K`}
           />
           <kbd className="chat-sidebar__search-key" aria-hidden="true">{SHORTCUT_MOD === "⌘" ? "⌘K" : "Ctrl K"}</kbd>
+          {/* 触屏没有 Esc：有输入时给一个清除钮，清完焦点留在框里接着搜。 */}
+          {query ? <button type="button" className="chat-sidebar__search-clear" aria-label="清除搜索" title="清除搜索"
+            onClick={() => { setQuery(""); searchRef.current?.focus(); }}>
+            <X size={14} aria-hidden="true" />
+          </button> : null}
         </label>
       </div>
 

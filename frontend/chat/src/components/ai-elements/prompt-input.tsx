@@ -35,8 +35,14 @@ import {
   useState,
 } from "react";
 
+/** 输入卡里的附件：本地 Blob URL 加选择时就知道的字节数（卡片上显示大小）。 */
+export type PromptInputFile = FileUIPart & { id: string; sizeBytes?: number };
+
+/** 拒收原因：单个超过大小上限，或这条消息的附件数已满。 */
+export type RejectReason = "size" | "count";
+
 export interface AttachmentsContext {
-  files: (FileUIPart & { id: string })[];
+  files: PromptInputFile[];
   add: (files: File[] | FileList) => void;
   remove: (id: string) => void;
   openFileDialog: () => void;
@@ -56,7 +62,7 @@ export const usePromptInputAttachments = () => {
 
 export interface PromptInputMessage {
   text: string;
-  files: FileUIPart[];
+  files: Omit<PromptInputFile, "id">[];
 }
 
 export type PromptInputProps = Omit<
@@ -68,7 +74,9 @@ export type PromptInputProps = Omit<
   attachmentKey?: string;
   /** 单个附件上限（字节）；超出的文件不入列，交给 onRejectFiles 提示。 */
   maxFileSize?: number;
-  onRejectFiles?: (files: File[]) => void;
+  /** 一条消息最多带几个附件；多出的不入列。 */
+  maxFiles?: number;
+  onRejectFiles?: (files: File[], reason: RejectReason) => void;
   /** 可返回剩余草稿此后归属的键（新会话首次被接纳时拿到的会话 ID），未发出的附件随之迁过去。 */
   onSubmit: (
     message: PromptInputMessage,
@@ -82,6 +90,7 @@ export const PromptInput = ({
   multiple,
   attachmentKey = "",
   maxFileSize,
+  maxFiles = Number.POSITIVE_INFINITY,
   onRejectFiles,
   onSubmit,
   children,
@@ -93,10 +102,10 @@ export const PromptInput = ({
   const submittingRef = useRef(false);
   const [submittedFileIds, setSubmittedFileIds] = useState<string[]>([]);
 
-  const [files, setFiles] = useState<(FileUIPart & { id: string })[]>([]);
+  const [files, setFiles] = useState<PromptInputFile[]>([]);
   // 附件与草稿一样按会话保留：切走时存到旧会话名下，切回时取出，不跟到别的会话里被发出去。
   // carry：new: 草稿首次被接纳后，它的附件归属换成真实会话，键随后变过去时不算切会话。
-  const [parked, setParked] = useState<{ key: string; others: ReadonlyMap<string, (FileUIPart & { id: string })[]>; carry: { from: string; to: string } | null }>(
+  const [parked, setParked] = useState<{ key: string; others: ReadonlyMap<string, PromptInputFile[]>; carry: { from: string; to: string } | null }>(
     () => ({ key: attachmentKey, others: new Map(), carry: null }));
   if (parked.key !== attachmentKey) {
     const owner = parked.carry?.from === parked.key ? parked.carry.to : parked.key;
@@ -131,21 +140,26 @@ export const PromptInput = ({
   const add = useCallback(
     (fileList: File[] | FileList) => {
       // 超限文件在选择时就拒掉：等到发送才被服务端 413，用户已经写完话、还会被引导去"重试"一个必然失败的上传。
+      // 只剔除超限的那几个，其余照常入列（Desktop 同样部分接收）。
       const all = Array.from(fileList);
-      const incoming = maxFileSize === undefined ? all : all.filter((file) => file.size <= maxFileSize);
-      if (incoming.length < all.length) onRejectFiles?.(all.filter((file) => !incoming.includes(file)));
+      const sized = maxFileSize === undefined ? all : all.filter((file) => file.size <= maxFileSize);
+      if (sized.length < all.length) onRejectFiles?.(all.filter((file) => !sized.includes(file)), "size");
+      const room = Math.max(0, maxFiles - filesRef.current.length);
+      const incoming = sized.slice(0, room);
+      if (incoming.length < sized.length) onRejectFiles?.(sized.slice(room), "count");
       if (!incoming.length) return;
       // Blob URL 在 updater 外创建：updater 可能被 React 重复调用，里面建的 URL 会有一份无人释放。
-      const next: (FileUIPart & { id: string })[] = incoming.map((file) => ({
+      const next: PromptInputFile[] = incoming.map((file) => ({
         filename: file.name,
         id: nanoid(),
         mediaType: file.type,
+        sizeBytes: file.size,
         type: "file",
         url: URL.createObjectURL(file),
       }));
       setFiles((prev) => [...prev, ...next]);
     },
-    [maxFileSize, onRejectFiles]
+    [maxFileSize, maxFiles, onRejectFiles]
   );
 
   // 发送成功时本次附件可能已随切换会话存到别处，两边一起移除。
@@ -160,7 +174,7 @@ export const PromptInput = ({
       });
       setParked((prev) => {
         if (![...prev.others.values()].some((list) => list.some((file) => file.id === id))) return prev;
-        const others = new Map<string, (FileUIPart & { id: string })[]>();
+        const others = new Map<string, PromptInputFile[]>();
         for (const [key, list] of prev.others) {
           const found = list.find((file) => file.id === id);
           if (found?.url) URL.revokeObjectURL(found.url);
@@ -303,23 +317,31 @@ export const PromptInputBody = ({
 
 export type PromptInputTextareaProps = ComponentProps<
   typeof InputGroupTextarea
->;
+> & {
+  /** 粘贴的纯文本达到这个 UTF-8 字节数就转成附件（按住 Shift 粘贴照常插入）。 */
+  pasteAsFile?: { bytes: number; filename: string; onConverted?: (lines: number) => void };
+};
 
 // 外接键盘的平板会报告精细指针或悬停能力，此时仍按回车发送。
 export const touchOnly = () => window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 export const PromptInputTextarea = ({
   onKeyDown,
+  onKeyUp,
   className,
   placeholder = "What would you like to know?",
+  pasteAsFile,
   ...props
 }: PromptInputTextareaProps) => {
+  // 粘贴事件不带修饰键：按键时记下 Shift，Ctrl/⌘+Shift+V 随后的粘贴据此照常插入。
+  const shiftHeld = useRef(false);
   const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = useCallback(
     (e) => {
       // Call the external onKeyDown handler first
+      shiftHeld.current = e.shiftKey;
       onKeyDown?.(e);
 
       // If the external handler prevented default, don't run internal logic
@@ -373,6 +395,19 @@ export const PromptInputTextarea = ({
       if (!items) {
         return;
       }
+      // 1. 长文本转附件：几百行日志灌进输入框会淹没要说的话（Desktop 同样在 4KB 处转换）。
+      //    Office 类来源同时带文本与渲染图，按文本处理。
+      const text = event.clipboardData.getData("text/plain");
+      const officeLike = Boolean(text) && event.clipboardData.types.includes("text/html");
+      if (pasteAsFile && text && !shiftHeld.current && new Blob([text]).size >= pasteAsFile.bytes) {
+        event.preventDefault();
+        attachments.add([new File([text], pasteAsFile.filename, { type: "text/plain" })]);
+        pasteAsFile.onConverted?.(text.split("\n").length);
+        return;
+      }
+      if (officeLike) {
+        return;
+      }
 
       const files: File[] = [];
 
@@ -390,7 +425,7 @@ export const PromptInputTextarea = ({
         attachments.add(files);
       }
     },
-    [attachments]
+    [attachments, pasteAsFile]
   );
 
   const handleCompositionEnd = useCallback(() => setIsComposing(false), []);
@@ -403,6 +438,10 @@ export const PromptInputTextarea = ({
       onCompositionEnd={handleCompositionEnd}
       onCompositionStart={handleCompositionStart}
       onKeyDown={handleKeyDown}
+      onKeyUp={(event) => {
+        shiftHeld.current = event.shiftKey;
+        onKeyUp?.(event);
+      }}
       onPaste={handlePaste}
       placeholder={placeholder}
       enterKeyHint={touchOnly() ? "enter" : "send"}
