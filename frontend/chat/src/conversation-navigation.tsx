@@ -200,6 +200,8 @@ export function ConversationSessionRow({ session, pendingSessionId, onActivate, 
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameCancelledRef = useRef(false);
+  // 回车提交后输入框转为 disabled 会触发 blur，blur 也提交：同一次编辑只发一次请求。
+  const renameInFlightRef = useRef(false);
   useEffect(() => () => {
     if (armTimer.current !== null) clearTimeout(armTimer.current);
   }, []);
@@ -219,17 +221,19 @@ export function ConversationSessionRow({ session, pendingSessionId, onActivate, 
     setRenaming(false);
   };
   const commitRename = async () => {
-    if (renameCancelledRef.current || !renaming || !onRename) return;
+    if (renameCancelledRef.current || renameInFlightRef.current || !renaming || !onRename) return;
     const title = renameValue.trim();
     if (title === session.title.trim()) {
       setRenaming(false);
       return;
     }
+    renameInFlightRef.current = true;
     setRenameBusy(true);
     try {
       await onRename(title);
       setRenaming(false);
     } finally {
+      renameInFlightRef.current = false;
       setRenameBusy(false);
     }
   };
@@ -295,6 +299,8 @@ export function ConversationSessionRow({ session, pendingSessionId, onActivate, 
           disabled={renameBusy}
           onChange={(event) => setRenameValue(event.target.value)}
           onKeyDown={(event) => {
+            // 输入法组合中的回车是确认候选词、Esc 是取消候选，都不属于编辑框（Safari 只剩 keyCode 229 可辨认）。
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             if (event.key === "Enter") {
               event.preventDefault();
               void commitRename();

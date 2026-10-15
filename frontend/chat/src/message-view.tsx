@@ -1080,7 +1080,7 @@ const ToolStep = memo(function ToolStep({
                   </section>
                 ) : null}
                 {open && toolHasValue(resultValue) ? (
-                  <section className="tool-detail-section" aria-label={block.status === "output-error" ? "工具错误" : "工具结果"}>
+                  <section className={`tool-detail-section${block.status === "output-error" ? " is-error" : ""}`} aria-label={block.status === "output-error" ? "工具错误" : "工具结果"}>
                     <ToolDetailHeading
                       label={block.status === "output-error" ? "错误" : "结果"}
                       copied={copiedDetail?.section === "result" && copiedDetail.text === result}
@@ -1155,13 +1155,19 @@ function ToolStepSummary({
   );
 }
 
+// 工具行摘要：优先模型写的 description；没有时取调用目标（文件、网址、检索词、命令），
+// 不展开也知道读了哪个文件、搜了什么——只有工具名的一行等于没说。
 function toolDescription(input: unknown) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return "";
   }
-
-  const description = (input as Record<string, unknown>).description;
-  return typeof description === "string" ? description.trim() : "";
+  const args = input as Record<string, unknown>;
+  const text = (name: string) => typeof args[name] === "string" ? (args[name] as string).trim() : "";
+  if (text("description")) return text("description");
+  if (text("path")) return text("path").split(/[\\/]/u).filter(Boolean).slice(-3).join("/");
+  if (text("url")) return text("url").replace(/^https?:\/\//u, "");
+  if (text("query")) return text("query");
+  return text("command").split("\n")[0] ?? "";
 }
 
 function toolParameters(input: unknown): [string, string][] {

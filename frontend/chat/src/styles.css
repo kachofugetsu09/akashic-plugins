@@ -44,6 +44,12 @@ input {
   font-variant-ligatures: none;
 }
 
+/* 选区跟随主色的淡底、保留原文字色：浏览器默认的亮蓝白字在纸面上太刺眼。 */
+::selection {
+  background: color-mix(in oklch, var(--ak-rule-focus) 22%, transparent);
+  color: inherit;
+}
+
 .webui-entry-loading {
   display: grid;
   width: 100%;
@@ -2454,6 +2460,13 @@ form.composer:focus-within [data-slot="input-group"] {
 
 .model-picker__star.is-favorite svg {
   fill: currentColor;
+}
+/* 触屏没有悬停，未收藏的星淡显（不是藏起来）才找得到收藏入口；热区放大到约 36px，负边距不撑高行。 */
+@media (hover: none) {
+  .model-picker__star:not(.is-favorite) { opacity: 0.45; }
+}
+@media (pointer: coarse) {
+  .model-picker__star { padding: 10px; margin: -9px -10px -9px -4px; }
 }
 
 .model-picker__empty {

@@ -22,6 +22,7 @@ import { DesktopSidebar } from "./desktop-sidebar";
 import { useSidebarRail } from "./use-sidebar-rail";
 import type { DesktopChatController } from "./use-desktop-chat-controller";
 import { SessionDirectory } from "./session-directory";
+import { SelectionQuote } from "./selection-quote";
 import { isGeneratingChatStatus, lastInputResult } from "./web-chat-status";
 
 interface DesktopChatViewProps {
@@ -164,6 +165,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
             timelineMessages={timelineMessages} replyActivities={replyActivities} />
           <NarrowReadingChrome />
           <ReadingReturnButton generating={isGeneratingChatStatus(status)} />
+          {hasMessages ? <SelectionQuote onQuote={editInput} /> : null}
           <SessionReadingMemory sessionId={activeSessionId}
             ready={!historyLoading && timelineMessages.at(-1)?.session_id === activeSessionId
               ? `${timelineMessages.length}:${timelineMessages[0]?.id ?? ""}` : ""} />
@@ -394,6 +396,8 @@ function SessionHeadingTitle({ heading, value, onRename }: {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
+  // 回车提交后紧接着失焦会再触发一次 commit；请求未回时只认第一次。
+  const inFlightRef = useRef(false);
   if (!onRename) return <h1 title={heading}>{heading}</h1>;
   const start = () => {
     cancelledRef.current = false;
@@ -405,17 +409,20 @@ function SessionHeadingTitle({ heading, value, onRename }: {
     }, 0);
   };
   const commit = async () => {
-    if (cancelledRef.current) return;
+    if (cancelledRef.current || inFlightRef.current) return;
     const title = draft.trim();
     if (title === value.trim()) {
       setEditing(false);
       return;
     }
+    inFlightRef.current = true;
     try {
       await onRename(title);
       setEditing(false);
     } catch {
       // 错误已由 controller 上报；编辑态保留，用户可再试或按 Esc 放弃。
+    } finally {
+      inFlightRef.current = false;
     }
   };
   if (!editing) return <h1 title={heading} onDoubleClick={start}>{heading}</h1>;
@@ -427,6 +434,8 @@ function SessionHeadingTitle({ heading, value, onRename }: {
     aria-label="重命名会话"
     onChange={(event) => setDraft(event.target.value)}
     onKeyDown={(event) => {
+      // 输入法组合中的回车、Esc 属于输入法，不提交也不放弃编辑。
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       if (event.key === "Enter") {
         event.preventDefault();
         void commit();

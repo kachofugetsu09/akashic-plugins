@@ -167,6 +167,8 @@ try {
   await page.locator('.composer textarea').fill('');
   await page.keyboard.press('ArrowUp');
   await page.waitForFunction(() => document.querySelector('.composer textarea')?.value === '第一问');
+  // 取回后下一帧才把光标移到末尾；等它落定再改写，否则 fill 的全选会被折叠成追加。
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.locator('.composer textarea').fill('已有内容');
   await page.keyboard.press('ArrowUp');
   assert.equal(await draft(page), '已有内容');

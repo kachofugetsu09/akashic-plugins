@@ -1930,7 +1930,14 @@ button.tool-step-summary:active {
 }
 .tool-result-fields dd { margin: 0.25rem 0 0; min-width: 0; }
 .tool-result-fields details { padding-inline-start: 0.75rem; border-inline-start: 1px solid var(--ak-rule-subtle); }
-.tool-result-data.error .tool-result { color: var(--ak-color-status-error); }
+/* 失败输出照常用正文墨色（整段日志染红只会喧嚣、难读）；错误语义由标题色与左侧 2px 细线承担。 */
+.tool-detail-section.is-error .tool-detail-heading h4 { color: var(--ak-color-status-error); }
+.tool-result-data.error .tool-result {
+  /* 普通结果是 52% 透明墨色；失败原因需要读，提到次级墨色（浅色对比度 ≥4.5:1）。 */
+  color: var(--ak-ink-secondary);
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid color-mix(in oklch, var(--ak-color-status-error) 60%, transparent);
+}
 
 /* 上下文提示：沿用思考行的触发行；原生 details 的三角标记换成右侧 chevron。 */
 .context-notice > summary {
@@ -2030,3 +2037,26 @@ button.tool-step-summary:active {
 .inline-reply-process > details > summary { min-height: 40px; }
 .attachment-description h3 { padding-inline-end: 44px; }
 @media (max-width: 820px), (max-height: 30rem) and (pointer: coarse) { .inline-reply-process > details > summary { min-height: 44px; } }
+
+/* 选中回复里一段文字后浮出的"引用"：墨色反白小药丸，深浅主题随墨色与底色自动反转。 */
+.selection-quote {
+  position: fixed;
+  z-index: 50;
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ak-color-bg-canvas);
+  background: var(--ak-ink-primary);
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--ak-ink-primary) 18%, transparent);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  translate: -50% -100%;
+  animation: selection-quote-in var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
+}
+.selection-quote.is-below { translate: -50% 0; }
+.selection-quote:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
+@keyframes selection-quote-in { from { opacity: 0; } }

@@ -94,7 +94,8 @@ export function NavigationRowMenu({ title, actions = [], className, children, on
           aria-label={`${title} 的操作`} onCloseAutoFocus={(event) => {
             event.preventDefault();
             held.current = false;
-            rowRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+            // 菜单动作可能把行换成输入框（重命名）：焦点交给它，而不是"…"按钮——输入框一失焦就会按原标题提交并退出编辑。
+            rowRef.current?.querySelector<HTMLElement>("input:not(:disabled), button:not(:disabled)")?.focus({ preventScroll: true });
           }}>
           {actions.map((action) => <DropdownMenuItem key={action.label} disabled={action.disabled}
             onSelect={action.onSelect}

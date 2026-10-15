@@ -135,19 +135,15 @@ export const PromptInput = ({
       const incoming = maxFileSize === undefined ? all : all.filter((file) => file.size <= maxFileSize);
       if (incoming.length < all.length) onRejectFiles?.(all.filter((file) => !incoming.includes(file)));
       if (!incoming.length) return;
-      setFiles((prev) => {
-        const next: (FileUIPart & { id: string })[] = [];
-        for (const file of incoming) {
-          next.push({
-            filename: file.name,
-            id: nanoid(),
-            mediaType: file.type,
-            type: "file",
-            url: URL.createObjectURL(file),
-          });
-        }
-        return [...prev, ...next];
-      });
+      // Blob URL 在 updater 外创建：updater 可能被 React 重复调用，里面建的 URL 会有一份无人释放。
+      const next: (FileUIPart & { id: string })[] = incoming.map((file) => ({
+        filename: file.name,
+        id: nanoid(),
+        mediaType: file.type,
+        type: "file",
+        url: URL.createObjectURL(file),
+      }));
+      setFiles((prev) => [...prev, ...next]);
     },
     [maxFileSize, onRejectFiles]
   );
