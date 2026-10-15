@@ -181,7 +181,6 @@ export function useDesktopChatController() {
     setStatus(next);
   }, [setStatus]);
   const [stopPending, setStopPending] = useState(false);
-  // 每次停止（无论从哪个入口）都递增；排队发送据此判断"排队之后用户按过停止"。
   const [stopCount, setStopCount] = useState(0);
   const [error, setError] = useState("");
   const [connectionError, setConnectionError] = useState("");
@@ -875,7 +874,7 @@ export function useDesktopChatController() {
   }, [canSend, modelProblem, deliverMessage, ensureSession, modelSelectionDirty, replyTarget, reportError, selectedReasoningEffort, selectedRuntimeId, setMessages, setStatusLive]);
 
   const stopTurn = useCallback(() => {
-    setStopCount((count) => count + 1);
+    setStopCount((version) => version + 1);
     if (sendRequestRef.current) {
       sendRequestRef.current.abort();
       if (socketRef.current?.readyState === WebSocket.CONNECTING) {
