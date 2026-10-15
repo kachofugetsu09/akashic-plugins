@@ -2,6 +2,7 @@ import { ChevronRight, PenLine, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import "./conversation-navigation.css";
 import { SessionStatusMark, type SessionStatus } from "./session-status-mark";
+import { MarqueeText } from "./marquee-text";
 import { NavigationRowMenu, type NavigationRowAction } from "./navigation-row-menu";
 
 export interface ConversationDestination {
@@ -319,6 +320,7 @@ export function ConversationSessionRow({ session, pendingSessionId, onActivate, 
       type="button"
       aria-current={session.active ? "true" : undefined}
       aria-busy={pendingSessionId === session.id || undefined}
+      data-row-primary=""
       disabled={session.unavailable}
       title={session.preview ? `${session.title} · ${session.preview}` : session.title}
       draggable={drag !== undefined}
@@ -346,9 +348,9 @@ export function ConversationSessionRow({ session, pendingSessionId, onActivate, 
       <SessionStatusMark status={session.status} />
       <span className="conversation-session__copy">
         <span className="conversation-session__title">
-          <strong>{session.title}</strong>
+          <strong><MarqueeText>{session.title}</MarqueeText></strong>
         </span>
-        <small>{session.preview}</small>
+        <small><MarqueeText still>{session.preview}</MarqueeText></small>
       </span>
     </button>;
 

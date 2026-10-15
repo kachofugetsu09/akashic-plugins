@@ -927,7 +927,7 @@ input {
   padding-inline: 4px;
 }
 
-.project-group__open:disabled,
+.project-group__open[aria-disabled="true"],
 .project-group__toggle:disabled { cursor: default; }
 
 .project-group__open svg { flex: 0 0 auto; }
@@ -962,10 +962,7 @@ input {
 .project-group__name {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
   font-weight: 550;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .project-group__memory {
@@ -1002,9 +999,6 @@ input {
 .project-session > span:not(.session-status-slot) {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .project-session {
@@ -1026,6 +1020,8 @@ input {
   .project-session,
   .project-navigation__icon { min-height: 44px; }
   .project-navigation__header > .project-navigation__icon { width: 44px; }
+  /* 排序钮放到 44px 后，分组标题行不再叠 18px 上内边距：热区不变，搜索框到"最近会话"文字的空白 62→44px。 */
+  .conversation-navigation__heading--section:has(.conversation-sort-trigger) { padding-block: 4px 0; }
 }
 
 .project-dialog-overlay { background: rgb(var(--ak-color-shadow-rgb) / 0.32); }
@@ -1301,14 +1297,11 @@ input {
 
 .conversation-heading h1 {
   min-inline-size: 0;
-  overflow: hidden;
   margin: 0;
   color: var(--chat-muted);
   font-size: 0.9375rem;
   font-weight: 500;
   line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 :root[data-shell-tools="true"] .conversation-heading {
@@ -1424,6 +1417,8 @@ input {
    每条消息下都预留了悬停操作行，均匀 gap 会让提问离上一轮回答和离自己的回答一样远。 */
 .conversation-content > .timeline-input + :is(.timeline-output, .reply-activity, .thinking-placeholder) { margin-block-start: -12px; }
 .conversation-content > :is(.timeline-output, .reply-activity) + .timeline-input { margin-block-start: 12px; }
+/* 同一方接着说（补充一句、连发的主动消息）与问答同距：它们是一段话的续写，不是新一轮。 */
+.conversation-content > .timeline-output + :is(.timeline-output, .reply-activity) { margin-block-start: -12px; }
 
 .desktop-history-loader,
 .desktop-history-start {
@@ -2821,6 +2816,10 @@ form.composer:focus-within [data-slot="input-group"] {
   }
 
   .chat-main.is-reading .conversation-heading { translate: 0 -100%; }
+  /* 标题栏在场时吸顶的工具/思考行停在它下面（44px 按钮 + 上下 6px + 发丝线），向下阅读它移出后贴回顶缘。 */
+  .chat-main:not(.is-empty) { --heading-cover: 57px; }
+  .chat-main.is-reading { --heading-cover: 0px; }
+  .chat-main :is(.tool-step-sticky, .process-trigger-sticky) { transition: top var(--ak-sys-duration-short) var(--ak-sys-motion-standard); }
   .chat-main:not(.is-empty) .conversation-content { padding-block-start: calc(1.5rem + 53px); }
 
   .chat-main .composer.is-compact,
