@@ -236,6 +236,18 @@
   font-size: 0.875em;
 }
 
+/* 长标识符折行时每一段都自带内边距与圆角，不在断开处被硬切成半块底色。 */
+:is(.agent-content, .static-message-response, .process-markdown) :not(pre) > code,
+:is(.agent-content, .process-markdown) .markstream-react .inline-code {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* 裸网址没有可读的词边界：按字符填满整行，不在 "-" 前后紧急断开、留下单独一行的连字符。 */
+.markdown-reading a.reading-url {
+  word-break: break-all;
+}
+
 /* Markstream owns Markdown structure; the product only maps it to chat tokens. */
 .message-response-markstream > .markstream-react {
   color: inherit;
@@ -452,6 +464,13 @@
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .markdown-renderer > .node-slot:first-child > .node-content > :first-child
   :is(.code-block-container, pre[data-markstream-pre="1"], .mermaid-block, .markstream-deferred-source, .math-block-node, .katex-display):not(:is(li, blockquote, td) *) {
   margin-block-start: 0 !important;
+}
+
+/* 气泡有自己的内边距：末块（代码块的 my-4、段落的段后距）的下边距只会在气泡底部多出一截空白。 */
+.user-bubble :is(.markdown-reading .markdown-renderer > .node-slot:last-child > .node-content, .static-message-response) > :last-child,
+.user-bubble .markdown-reading .markdown-renderer > .node-slot:last-child > .node-content > :last-child
+  :is(.code-block-container, pre[data-markstream-pre="1"], .markstream-deferred-source, .math-block-node, .katex-display):not(:is(li, blockquote, td) *) {
+  margin-block-end: 0 !important;
 }
 
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-emphasis:not(li p) {
@@ -2042,6 +2061,9 @@ button.tool-step-summary:active {
 .timeline-input { align-items: flex-end; }
 .timeline-message .agent-content { min-width: 0; }
 .timeline-message .user-bubble { min-width: 0; }
+/* 气泡按内容收缩，而代码块、宽表、块公式的宽度又跟着容器走：两者互相依赖时气泡塌到最小内容宽度（只有代码时只剩一条缝）。
+   含这些块的气泡直接占满允许的最大宽度。 */
+.timeline-message .user-bubble:has(pre, table, .code-block-container, .katex-display) { width: 100%; }
 .timeline-details { margin-block: 0.5rem; color: var(--ak-color-text-secondary); }
 .timeline-details summary { cursor: pointer; padding-block: 0.5rem; overflow-wrap: anywhere; }
 .timeline-details summary:focus-visible,

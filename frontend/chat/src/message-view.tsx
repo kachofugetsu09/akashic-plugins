@@ -620,14 +620,14 @@ function UserTextClamp({ enabled, children }: { enabled: boolean; children: Reac
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     const element = box.current;
-    if (!enabled || expanded || !element) return;
-    // 用户消息发出后正文不再变化；宽度变化（窗口尺寸）、字体与图片加载才可能改变是否溢出。
-    // 不逐条挂 ResizeObserver：历史消息带 content-visibility:auto，滚进滚出时尺寸在 0 与实际值间切换，
-    // 每条观察都会让浏览器多跑一轮布局，长会话滚动时布局次数会翻倍。
-    // 明显不到 12 行的短输入不读几何：补载历史时这些消息多在跳过渲染的区域里，逐条读 scrollHeight 会逐条强制布局。
+    const inner = content.current;
+    if (!enabled || expanded || !element || !inner) return;
+    // 明显不到 12 行的短输入不读几何、不挂观察器：补载历史时这些消息多在跳过渲染的区域里，逐条读 scrollHeight
+    // 会逐条强制布局；历史消息带 content-visibility:auto，逐条观察会让长会话滚动多跑布局。
     if (!mayExceedClamp(element)) return;
     let frame = 0;
     const measure = () => {
@@ -636,13 +636,14 @@ function UserTextClamp({ enabled, children }: { enabled: boolean; children: Reac
     };
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(measure); };
     measure();
-    void document.fonts.ready.then(schedule);
-    window.addEventListener("resize", schedule);
-    element.addEventListener("load", schedule, true);
+    // 可能超出的这一小部分观察折叠框与里面不限高的内容层：窗口变宽变窄、字体换用、图片加载、富渲染逐步换出
+    // （源码→高亮代码块）都会改内容层高度。只看框不够：恰好 12 行的正文再晚到一张图，框仍是 12 行高，变的只有内容。
+    const observer = new ResizeObserver(schedule);
+    observer.observe(element);
+    observer.observe(inner);
     return () => {
+      observer.disconnect();
       window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", schedule);
-      element.removeEventListener("load", schedule, true);
     };
   }, [enabled, expanded]);
   if (!enabled) return <>{children}</>;
@@ -653,7 +654,7 @@ function UserTextClamp({ enabled, children }: { enabled: boolean; children: Reac
   };
   return <>
     <div ref={box} className="user-text-clamp" data-state={expanded ? "open" : overflowing ? "clamped" : undefined}>
-      {children}
+      <div ref={content}>{children}</div>
     </div>
     {overflowing || expanded ? <button ref={toggle} type="button" className="user-text-toggle"
       aria-expanded={expanded} onClick={onToggle}>{expanded ? "收起" : "展开全部"}</button> : null}
