@@ -1,5 +1,5 @@
 import { timelineReplyGroups, timelineToolResults, timelineInputStarts, timelineSourceKey, timelineSourceRefreshTokens } from "./message-timeline";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { cycleTheme, useTheme } from "../../theme/src/theme-runtime";
 import { MaterialButton } from "../../theme/src/material-react";
@@ -170,6 +170,13 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
 }
 
 // 滚动到顶部附近时自动补载更早消息；文字按钮保留给键盘与不触发滚动的场景。
+// 隐藏行（如被归组的工具结果）没有 DOM，取第一条实际渲染的消息作锚。
+function pinFirstMessage(scroller: HTMLElement): { id: string; top: number } | null {
+  const anchor = scroller.querySelector<HTMLElement>("[data-message-id]");
+  const id = anchor?.dataset.messageId;
+  return anchor && id ? { id, top: anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top } : null;
+}
+
 function DesktopHistoryLoader({
   firstMessageId,
   hasMore,
@@ -184,32 +191,45 @@ function DesktopHistoryLoader({
   const { scrollRef } = useStickToBottomContext();
   const rowRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
-  const latest = useRef({ firstMessageId, onLoadOlder });
-  latest.current = { firstMessageId, onLoadOlder };
+  const latest = useRef({ onLoadOlder, loading });
+  latest.current = { onLoadOlder, loading };
+  // 首条消息在滚动区里的最新位置；请求期间用户继续滚动也随之更新。
+  const pinRef = useRef<{ id: string; top: number } | null>(null);
 
-  // 1. 记录首条消息位置，加载完成后把它放回原处，避免视图跳动。
   const load = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
+    const scroller = scrollRef.current;
+    if (scroller) pinRef.current = pinFirstMessage(scroller);
     try {
-      const scrollElement = scrollRef.current;
-      const { firstMessageId: id, onLoadOlder: loadOlder } = latest.current;
-      const escapedId = id ? CSS.escape(id) : "";
-      const anchor = escapedId
-        ? scrollElement?.querySelector<HTMLElement>(`[data-message-id="${escapedId}"]`)
-        : null;
-      const anchorTop = anchor?.getBoundingClientRect().top;
-      await loadOlder();
-      if (!scrollElement || anchorTop === undefined || !escapedId) return;
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-      const restoredAnchor = scrollElement.querySelector<HTMLElement>(`[data-message-id="${escapedId}"]`);
-      if (restoredAnchor) scrollElement.scrollTop += restoredAnchor.getBoundingClientRect().top - anchorTop;
+      await latest.current.onLoadOlder();
     } finally {
       busyRef.current = false;
     }
   }, [scrollRef]);
 
-  // 2. 行进入顶部 240px 预读范围时自动加载；只在相交状态变化时触发，失败不会循环重试。
+  // 1. 请求期间每次滚动都更新原首条消息离滚动区顶部的距离，而不是只在请求发出时记一次。
+  //    没有请求时不读：滚动事件里同步读几何会逐次强制布局，长会话滚动时是主要的脚本开销。
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !firstMessageId) return;
+    const record = () => {
+      if (busyRef.current || latest.current.loading) pinRef.current = pinFirstMessage(scroller);
+    };
+    scroller.addEventListener("scroll", record, { passive: true });
+    return () => scroller.removeEventListener("scroll", record);
+  }, [firstMessageId, scrollRef]);
+
+  // 2. 更早的消息插入后、浏览器绘制前，把原首条放回最后一次滚动时的位置；原生滚动锚定已生效时差值为 0。
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const pin = pinRef.current;
+    if (!scroller || !pin) return;
+    const anchor = scroller.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(pin.id)}"]`);
+    if (anchor && anchor !== scroller.querySelector("[data-message-id]")) scroller.scrollTop += anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top - pin.top;
+  }, [firstMessageId, scrollRef]);
+
+  // 3. 行进入顶部 240px 预读范围时自动加载；只在相交状态变化时触发，失败不会循环重试。
   useEffect(() => {
     const row = rowRef.current;
     const root = scrollRef.current;
@@ -221,7 +241,7 @@ function DesktopHistoryLoader({
     return () => observer.disconnect();
   }, [hasMore, load, scrollRef]);
 
-  // 3. 已到对话开头时给出安静的终点标记，而不是让入口凭空消失。
+  // 4. 已到对话开头时给出安静的终点标记，而不是让入口凭空消失。
   if (!hasMore) return <p className="desktop-history-start">对话开头</p>;
   return <div ref={rowRef} className="desktop-history-loader" data-loading={loading || undefined}>
     {loading
