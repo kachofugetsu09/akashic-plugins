@@ -1,5 +1,5 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { CodeBlockNode, ListNode, ParagraphNode as ParagraphRenderer, PreCodeNode, type NodeComponentProps } from "markstream-react";
 import type { CodeBlockNode as CodeData, ListNode as ListData, ParagraphNode, ParsedNode, TableNode as TableData } from "stream-markdown-parser";
 import { copyReadingCode, isConceptLabel, isNumericColumn, isPlainTextLanguage, stripConceptSeparator } from "./markdown-reading";
@@ -120,6 +120,79 @@ function PlainCodeCopy({ code }: { code: string }) {
   </button>;
 }
 
+// 横滚发生在高亮组件的 shadow DOM 里（生成中则是普通 pre），触屏滚动条是浮层，看不出右边还有字。
+// 量出滚动位置写到外层 data-overflow（start / end），样式在对应边缘渐隐。
+function useCodeOverflowEdges(ref: RefObject<HTMLDivElement | null>): void {
+  useEffect(() => {
+    const wrapper = ref.current;
+    if (!wrapper) return;
+    let root: ShadowRoot | null = null;
+    let scroller: HTMLElement | null = null;
+    const resize = new ResizeObserver(() => measure());
+    const contents = new MutationObserver(() => measure());
+    // 1. 每次测量都重新找滚动元素：高亮完成前后 shadow 里的节点会被替换；没有高亮宿主时量自身的 pre。
+    const measure = () => {
+      const scope: ParentNode = root ?? wrapper;
+      scroller = [...scope.querySelectorAll<HTMLElement>("pre, code")].find((el) => el.scrollWidth > el.clientWidth + 1) ?? null;
+      const start = scroller !== null && scroller.scrollLeft > 1;
+      const end = scroller !== null && scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
+      const next = [start ? "start" : "", end ? "end" : ""].filter(Boolean).join(" ");
+      if (wrapper.dataset.overflow !== next) wrapper.dataset.overflow = next;
+    };
+    const onScroll = () => measure();
+    // 2. 高亮组件可能晚于本组件挂载，等宿主出现再接上滚动与尺寸监听。
+    const attach = () => {
+      const host = wrapper.querySelector("diffs-container");
+      if (!host?.shadowRoot || host.shadowRoot === root) return;
+      root?.removeEventListener("scroll", onScroll, true);
+      root = host.shadowRoot;
+      root.addEventListener("scroll", onScroll, { capture: true, passive: true });
+      resize.observe(host);
+      contents.observe(root, { childList: true, subtree: true });
+      measure();
+    };
+    // 3. 流式正文增长同样走这里：子树变化后重新接宿主并测量。
+    const mounts = new MutationObserver(() => { attach(); measure(); });
+    mounts.observe(wrapper, { childList: true, subtree: true, characterData: true });
+    wrapper.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    resize.observe(wrapper);
+    attach();
+    measure();
+    return () => {
+      mounts.disconnect();
+      wrapper.removeEventListener("scroll", onScroll, true);
+      contents.disconnect();
+      resize.disconnect();
+      root?.removeEventListener("scroll", onScroll, true);
+    };
+  }, [ref]);
+}
+
+function HighlightedCode(props: NodeComponentProps<CodeData>) {
+  const { node, ctx, isDark } = props;
+  const ref = useRef<HTMLDivElement>(null);
+  useCodeOverflowEdges(ref);
+  // 围栏正文自带结尾换行，高亮层会把它渲染成一整行空白。
+  const settled = node.code.endsWith("\n") ? { ...node, code: node.code.replace(/\n+$/, "") } : node;
+  return <div ref={ref} className="reading-code-scroll">
+    <CodeBlockNode node={settled} isDark={isDark} loading={Boolean(node.loading)}
+      codeBlockOptions={ctx?.codeBlockOptions} onCopy={ctx?.events.onCopy}
+      {...ctx?.codeBlockThemes}
+      {...ctx?.codeBlockProps}
+      stream={ctx?.codeBlockStream}
+      {...CODE_BLOCK_PROPS} />
+  </div>;
+}
+
+// 生成中的代码不高亮，但横滚提示与落定后一致。
+function StreamingCode({ node }: { node: CodeData }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useCodeOverflowEdges(ref);
+  return <div ref={ref} className="reading-code-scroll">
+    <PreCodeNode node={node} showLineNumbers={false} />
+  </div>;
+}
+
 /** 纯文本始终是无标题阅读面，带语言的代码仍使用原高亮与流式路径。 */
 export function ReadingCode({ node, ctx, isDark }: NodeComponentProps<CodeData>) {
   if (isPlainTextLanguage(node.language)) {
@@ -128,13 +201,6 @@ export function ReadingCode({ node, ctx, isDark }: NodeComponentProps<CodeData>)
       <PlainCodeCopy code={node.code} />
     </div>;
   }
-  if (ctx?.renderCodeBlocksAsPre) return <PreCodeNode node={node} showLineNumbers={false} />;
-  // 围栏正文自带结尾换行，高亮层会把它渲染成一整行空白。
-  const settled = node.code.endsWith("\n") ? { ...node, code: node.code.replace(/\n+$/, "") } : node;
-  return <CodeBlockNode node={settled} isDark={isDark} loading={Boolean(node.loading)}
-    codeBlockOptions={ctx?.codeBlockOptions} onCopy={ctx?.events.onCopy}
-    {...ctx?.codeBlockThemes}
-    {...ctx?.codeBlockProps}
-    stream={ctx?.codeBlockStream}
-    {...CODE_BLOCK_PROPS} />;
+  if (ctx?.renderCodeBlocksAsPre) return <StreamingCode node={node} />;
+  return <HighlightedCode node={node} ctx={ctx} isDark={isDark} />;
 }

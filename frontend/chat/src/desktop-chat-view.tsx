@@ -105,7 +105,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
           />
 
         <section className={`chat-main${conversationLayout ? "" : " is-empty"}`}>
-        <header className="conversation-heading">
+        <header className={`conversation-heading${!activeSessionId && !activeProject ? " is-blank" : ""}`}>
           <CompactNavigation
             embeddedShell={embeddedShell} surface={surface} sessions={sidebarSessions}
             activeSessionId={activeSessionId} pendingSessionId={pendingSessionId} chatReady={chatReady}

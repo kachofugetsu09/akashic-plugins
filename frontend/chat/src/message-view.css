@@ -360,6 +360,18 @@
   background-color: var(--ak-paper-quiet);
 }
 
+/* 横滚提示：哪边还有被藏住的字，哪边渐隐 28px；滚到头渐隐消失。只遮代码区，不遮块头。 */
+.reading-code-scroll { --code-edge: 28px; }
+.reading-code-scroll[data-overflow="end"] :is(diffs-container, pre) {
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--code-edge)), transparent);
+}
+.reading-code-scroll[data-overflow="start"] :is(diffs-container, pre) {
+  mask-image: linear-gradient(to right, transparent, #000 var(--code-edge));
+}
+.reading-code-scroll[data-overflow="start end"] :is(diffs-container, pre) {
+  mask-image: linear-gradient(to right, transparent, #000 var(--code-edge), #000 calc(100% - var(--code-edge)), transparent);
+}
+
 :where(.agent-content, .process-markdown) .code-block-header {
   min-height: 0 !important;
   padding: 0 0.25rem 0 1rem !important;

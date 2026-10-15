@@ -375,9 +375,11 @@ function CollapsedToolGroup({ count, durationMs, children }: {
 }
 
 /** 历史与实时回复共用一条流，过程项继续引用原消息和 part。 */
-function TimelineProcess({ flow, draftThinking = "", beforeReasoning, beforePart, onCopyToolDetail, partView }: {
+function TimelineProcess({ flow, draftThinking = "", groupTools = true, beforeReasoning, beforePart, onCopyToolDetail, partView }: {
   flow: FlowItem[];
   draftThinking?: string;
+  /** 本轮摘要里已经收过一次：展开后直接逐行，不再套一层"已执行 N 个工具"。 */
+  groupTools?: boolean;
   beforeReasoning?: (message: TimelineMessage) => ReactNode;
   beforePart?: (part: TimelinePart, index: number, message: TimelineMessage) => ReactNode;
   onCopyToolDetail?: (text: string) => void;
@@ -386,8 +388,8 @@ function TimelineProcess({ flow, draftThinking = "", beforeReasoning, beforePart
   // 槽位锚在首个过程项之前；纯文本输出没有过程项时退到流开头，仍由提交消息提供上下文。
   const slotIndex = flow.findIndex((item) => item.kind === "thinking" || item.kind === "tool");
   const slotKey = (slotIndex >= 0 ? flow[slotIndex] : flow[0])?.key ?? null;
-  const grouped = groupToolRuns(flow,
-    (item) => item.kind === "tool" && item.block.status !== "input-available" ? item.block : null);
+  const grouped = groupTools ? groupToolRuns(flow,
+    (item) => item.kind === "tool" && item.block.status !== "input-available" ? item.block : null) : flow;
   if (!flow.length && !draftThinking) return null;
   return <>
     <div className="process-trace">
@@ -430,7 +432,7 @@ function SettledTurnFlow({ flow, startedAt, endedAt, beforeReasoning, beforePart
   return <>
     {beforeReasoning?.(process[0].origin)}
     <TurnProcessSummary items={process} durationMs={turnDurationMs(startedAt, endedAt)}>
-      <TimelineProcess flow={process} beforePart={beforePart} />
+      <TimelineProcess flow={process} groupTools={false} beforePart={beforePart} />
     </TurnProcessSummary>
     <TimelineProcess flow={flow.filter((item) => item.kind === "part")} beforePart={beforePart} partView={partView} />
   </>;

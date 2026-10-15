@@ -4,15 +4,17 @@ import {
   Pin,
   PinOff,
   ArrowUpDown,
+  Keyboard,
   Settings,
   SunMoon,
   X,
 } from "lucide-react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup,
   DropdownMenuRadioItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConversationNavigation, ConversationSessionRow, type ConversationRowDrag, type ConversationSession } from "./conversation-navigation";
 import { PluginUiSlot } from "./plugin-ui-runtime";
 import akashicBrandIcon from "../../theme/src/akashic-brand.svg";
@@ -157,7 +159,8 @@ function useSearchHighlight(rootRef: RefObject<HTMLElement | null>, needle: stri
   }, [needle, rootRef]);
 }
 
-function useSidebarShortcuts(sidebarRef: RefObject<HTMLElement | null>, searchRef: RefObject<HTMLInputElement | null>, onNewChat: () => void) {
+function useSidebarShortcuts(sidebarRef: RefObject<HTMLElement | null>, searchRef: RefObject<HTMLInputElement | null>,
+  onNewChat: () => void, onShortcuts: () => void) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const sidebar = sidebarRef.current;
@@ -173,11 +176,49 @@ function useSidebarShortcuts(sidebarRef: RefObject<HTMLElement | null>, searchRe
       } else if (key === "o" && event.shiftKey) {
         event.preventDefault();
         onNewChat();
+      } else if (key === "/" && !event.shiftKey) {
+        event.preventDefault();
+        onShortcuts();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onNewChat, searchRef, sidebarRef]);
+  }, [onNewChat, onShortcuts, searchRef, sidebarRef]);
+}
+
+// 快捷键散在各处（输入框、侧栏、阅读区），只有 title 提示时几乎没人发现；这里集中列一份。
+// "?" 会被阅读时直接打字进入输入框接走，所以入口是 Ctrl+/（Slack、Linear 的习惯）和侧栏底部的键盘图标。
+function ShortcutsDialog({ open, onOpenChange, returnFocus }: { open: boolean; onOpenChange: (open: boolean) => void; returnFocus: () => void }) {
+  const mod = SHORTCUT_MOD === "⌘" ? "⌘" : "Ctrl";
+  const groups: { title: string; items: [string, string[]][] }[] = [
+    { title: "输入", items: [
+      ["发送；生成中排到本轮之后", ["Enter"]],
+      ["换行", ["Shift", "Enter"]],
+      ["停止生成", ["Esc"]],
+      ["取回上一条提问（输入框为空时）", ["↑"]],
+      ["阅读时直接打字，进入输入框", ["任意字符"]],
+    ] },
+    { title: "导航", items: [
+      ["搜索会话", [mod, "K"]],
+      ["新会话", [mod, "Shift", "O"]],
+      ["快捷键", [mod, "/"]],
+    ] },
+  ];
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="shortcuts-dialog" onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus(); }}>
+      <DialogHeader>
+        <DialogTitle>键盘快捷键</DialogTitle>
+        <DialogDescription className="sr-only">聊天界面可用的键盘快捷键</DialogDescription>
+      </DialogHeader>
+      {groups.map((group) => <section key={group.title} aria-label={group.title}>
+        <h3>{group.title}</h3>
+        <dl>{group.items.map(([label, keys]) => <div key={label}>
+          <dt>{label}</dt>
+          <dd>{keys.map((key) => <kbd key={key}>{key}</kbd>)}</dd>
+        </div>)}</dl>
+      </section>)}
+    </DialogContent>
+  </Dialog>;
 }
 
 function sortSessions(rows: DesktopSidebarSession[], sort: SessionSortId, order: readonly string[]): DesktopSidebarSession[] {
@@ -258,7 +299,25 @@ export const DesktopSidebar = memo(function DesktopSidebar({
   const [query, setQuery] = useState("");
   const sidebarRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  useSidebarShortcuts(sidebarRef, searchRef, onNewChat);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // 面板没有固定触发按钮（输入框里按快捷键也能打开）：打开前记下焦点与光标，关闭后放回原处接着写。
+  const shortcutsReturn = useRef<{ element: HTMLElement; selection: [number, number, "forward" | "backward" | "none"] | null } | null>(null);
+  const openShortcuts = useCallback(() => {
+    const element = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const field = element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement ? element : null;
+    shortcutsReturn.current = element ? { element, selection: field && field.selectionStart !== null && field.selectionEnd !== null ? [field.selectionStart, field.selectionEnd, field.selectionDirection ?? "none"] : null } : null;
+    setShortcutsOpen(true);
+  }, []);
+  const returnShortcutsFocus = useCallback(() => {
+    const target = shortcutsReturn.current;
+    shortcutsReturn.current = null;
+    if (!target?.element.isConnected) return;
+    target.element.focus({ preventScroll: true });
+    if (target.selection && (target.element instanceof HTMLTextAreaElement || target.element instanceof HTMLInputElement)) {
+      target.element.setSelectionRange(...target.selection);
+    }
+  }, []);
+  useSidebarShortcuts(sidebarRef, searchRef, onNewChat, openShortcuts);
   const [directoryProjectId, setDirectoryProjectId] = useState("");
   const [sessionSort, setSessionSort] = useState(readSessionSort);
   const [sessionOrder, setSessionOrder] = useState(readSessionOrder);
@@ -551,14 +610,21 @@ export const DesktopSidebar = memo(function DesktopSidebar({
           <Settings size={18} aria-hidden="true" />
           <span>功能设置</span>
         </a>}
-        <button type="button" className="chat-sidebar__action"
-          onClick={() => onCycleTheme()}
-          title={`切换主题，当前为${themeLabel}`}
-          aria-label={`切换主题，当前为${themeLabel}`}>
-          <SunMoon size={18} aria-hidden="true" />
-          <span>主题 · {themeLabel}</span>
-        </button>
+        <div className="chat-sidebar__footer-row">
+          <button type="button" className="chat-sidebar__action"
+            onClick={() => onCycleTheme()}
+            title={`切换主题，当前为${themeLabel}`}
+            aria-label={`切换主题，当前为${themeLabel}`}>
+            <SunMoon size={18} aria-hidden="true" />
+            <span>主题 · {themeLabel}</span>
+          </button>
+          <button type="button" className="chat-sidebar__shortcuts" aria-label="键盘快捷键" title={`键盘快捷键（${SHORTCUT_MOD}+/）`}
+            onClick={openShortcuts}>
+            <Keyboard size={16} aria-hidden="true" />
+          </button>
+        </div>
       </div>
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={returnShortcutsFocus} />
       {rail ? <SidebarRailResizer rail={rail} sidebarRef={sidebarRef} /> : null}
       {directoryProject && projects ? <ProjectDirectoryDialog project={directoryProject}
         onClose={() => setDirectoryProjectId("")} onChoose={(path) => projects.onBindDirectory(directoryProject.id, path)}

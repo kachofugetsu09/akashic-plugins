@@ -211,7 +211,14 @@ export const DesktopComposer = memo(function DesktopComposer({
       className={`composer ${shellExpanded ? "is-expanded" : "is-compact"} ${input.trim() || replyTarget ? "has-text" : "empty"}${resting ? " is-resting" : ""}${fileDragActive ? " is-drop-target" : ""}`}
       multiple
       data-draft-version={draftVersion}
-      onSubmit={(message) => submit(message.text, message.files)}
+      onSubmit={(message) => {
+        // 触屏发送后收起键盘、输入卡回到静止态：接下来是读回复，半屏键盘和展开的工具行只会挡住它。
+        if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+          setEngaged(false);
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        }
+        return submit(message.text, message.files);
+      }}
       onClick={(event) => {
         // 触摸的 click 在 pointerdown 之后按当时布局命中目标；展开必须等这次点击落定，
         // 否则工具行会顶到手指下，把点击送进模型选择。卡片空白处的点击等同点进输入框。

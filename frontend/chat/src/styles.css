@@ -81,6 +81,13 @@ input {
 
 .message-renderer-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
+/* 键盘焦点的兜底：没写自己焦点样式的控件也用同一道 2px 墨线，不落回浏览器默认的 1px 蓝环。
+   :where 让特异性为 0，组件自己的 :focus-visible 规则照旧优先。 */
+:where(.chat-shell, [role="dialog"]) :where(button, a[href], summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--ak-rule-focus);
+  outline-offset: 2px;
+}
+
 .chat-shell {
   /* Product aliases let shared message CSS follow one brand contract. */
   --chat-ink: var(--ak-ink-primary);
@@ -323,6 +330,58 @@ input {
 
 .chat-sidebar__action:active {
   background: color-mix(in oklch, var(--md-sys-color-on-surface) 8%, transparent);
+}
+
+/* 主题行右端的键盘图标：只在有键盘与指针的宽屏出现，触屏不占位。 */
+.chat-sidebar__footer-row { display: flex; align-items: center; gap: 2px; }
+.chat-sidebar__footer-row > .chat-sidebar__action { min-width: 0; flex: 1 1 auto; }
+.chat-sidebar__shortcuts { display: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-sidebar__shortcuts {
+    display: inline-grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
+    color: var(--chat-faint, var(--chat-muted));
+    background: transparent;
+    cursor: pointer;
+  }
+  .chat-sidebar__shortcuts:hover { color: var(--chat-ink); background: color-mix(in oklch, var(--ak-ink-primary) 6%, transparent); }
+  .chat-sidebar__shortcuts:focus-visible { outline: 2px solid var(--ak-rule-focus); outline-offset: 2px; }
+}
+
+/* 快捷键表：左说明右按键，按键是发丝线小方块，不用彩色胶囊。 */
+.shortcuts-dialog { gap: 20px; }
+.shortcuts-dialog section { display: grid; gap: 6px; }
+.shortcuts-dialog h3 { margin: 0; color: var(--chat-muted); font-size: var(--chat-type-caption, 0.75rem); font-weight: 500; }
+.shortcuts-dialog dl { display: grid; margin: 0; }
+.shortcuts-dialog dl > div {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-block-end: 1px solid var(--ak-rule-subtle);
+}
+.shortcuts-dialog dl > div:last-child { border-block-end: 0; }
+.shortcuts-dialog dt { color: var(--ak-ink-primary); font-size: var(--chat-type-control, 0.875rem); }
+.shortcuts-dialog dd { display: flex; flex: 0 0 auto; gap: 4px; margin: 0; }
+.shortcuts-dialog kbd {
+  min-width: 1.75rem;
+  padding: 2px 6px;
+  border: 1px solid var(--ak-rule-default);
+  border-radius: 5px;
+  color: var(--ak-ink-secondary, var(--chat-muted));
+  background: var(--ak-paper-canvas);
+  font-family: var(--ak-type-technical);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
 }
 
 /* 搜索命中只换墨色并加粗下划线，不铺底色块，列表仍然安静。 */
@@ -1127,7 +1186,8 @@ input {
   background: transparent;
   /* 阅读列与输入卡的共同几何，唯一 owner 在这里；frontend/design.md §布局与对齐。 */
   --chat-column: 52rem;
-  --chat-dock-inset: 0.75rem;
+  /* 宽屏 2rem：侧栏展开后 820–1180px 这一段阅读列贴满主区，12px 时正文和输入卡几乎顶到边。 */
+  --chat-dock-inset: 2rem;
   --chat-bubble-max: 34rem;
   /* 输入卡边框外缘到输入文字的距离：1px 边框 + 15px padding。 */
   --composer-text-inset: 16px;
@@ -1543,6 +1603,15 @@ input {
   z-index: 4;
 }
 
+/* 空白新会话没有项目上下文时，宽屏顶栏的"新会话"与下方问候重复：标题与分隔线都退场。
+   紧凑外壳仍显示标题，给汉堡按钮一个落点；项目里的新会话保留"项目 / 新会话"。 */
+.chat-main.is-empty .conversation-heading.is-blank { border-block-end-color: transparent; }
+.chat-main.is-empty .conversation-heading.is-blank h1 { visibility: hidden; }
+
+@media (max-width: 820px), (max-height: 30rem) and (pointer: coarse) {
+  .chat-main.is-empty .conversation-heading.is-blank h1 { visibility: visible; }
+}
+
 .chat-main.is-empty .conversation {
   flex: 0 0 auto;
   margin-block-start: auto;
@@ -1556,7 +1625,7 @@ input {
   inset: auto;
   flex: none;
   inline-size: min(
-    calc(100% - 12px),
+    calc(100% - 2 * max(6px, var(--chat-dock-inset) - var(--composer-text-inset))),
     calc(var(--chat-column) - 2 * var(--chat-dock-inset) + 2 * var(--composer-text-inset))
   );
   margin-block: 0 auto;
@@ -2586,7 +2655,7 @@ form.composer:focus-within [data-slot="input-group"] {
   );
   inset-inline-end: auto;
   inline-size: min(
-    calc(100% - 12px),
+    calc(100% - 2 * max(6px, var(--chat-dock-inset) - var(--composer-text-inset))),
     calc(var(--chat-column) - 2 * var(--chat-dock-inset) + 2 * var(--composer-text-inset))
   );
 }
