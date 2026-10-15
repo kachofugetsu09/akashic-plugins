@@ -91,7 +91,8 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
   // 刷新或通知入口带着会话打开时，会话要等聊天就绪才开始读取；外壳需要配置、启动中或不可用时让给引导页。
   const shellStatus = shellState?.status ?? null;
   const sessionOpening = historyLoading || (sessionRequested && (shellStatus === null || shellStatus === "ready"));
-  const conversationLayout = hasMessages || sessionOpening;
+  const historyFailed = controller.historyFailure !== null && !hasMessages;
+  const conversationLayout = hasMessages || sessionOpening || historyFailed;
 
   const shellClass = embeddedShell ? "chat-shell is-embedded" : "chat-shell";
 
@@ -135,7 +136,11 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
         </header>
         <Conversation className="conversation" resize="instant">
           <ConversationContent className={conversationLayout ? "conversation-content" : "conversation-content empty"}>
-            {!hasMessages && sessionOpening ? <p className="history-switch-loading" role="status">正在读取消息</p>
+            {historyFailed ? <div className="history-switch-loading is-failed" role="alert">
+              <p>没能读取这段对话的记录{controller.historyFailure ? `：${controller.historyFailure}` : "。"}</p>
+              <button type="button" onClick={controller.retryHistory}>重试</button>
+            </div>
+              : !hasMessages && sessionOpening ? <p className="history-switch-loading" role="status">正在读取消息</p>
               : !hasMessages ? <DesktopEmptyState shellStatus={shellStatus} modelProblem={modelProblem} /> : (
               <MessageRendererErrorBoundary>
                 <DesktopHistoryLoader
@@ -197,13 +202,18 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
             replyTarget={replyTarget} onModelChange={handleModelChange} onCancelReply={cancelReply}
             onSend={sendMessage} onStop={stopTurn} lastInput={lastInput}
           />
-          <ComposerStatsLine messages={timelineMessages} activities={replyActivities} connected={replyAvailable !== null} />
+          <ComposerStatsLine messages={timelineMessages} activities={replyActivities} connected={replyAvailable !== null} stopping={stopPending} />
           {replyAvailable === false ? <p className="reply-unavailable" role="status">当前未加载回复插件</p> : null}
           {controller.reconnecting ? <p className="reply-unavailable connection-status" role="status">
             <i aria-hidden="true" />连接已断开，正在重新连接…
             <button type="button" onClick={retry}>立即重试</button>
           </p> : null}
           <HostBridgeNotice paused={controller.connectionLost} />
+          {/* 已有消息（旧记录或先到的实时回复）时读取失败不占阅读区：正文保留，失败与重试放在输入框下的错误行。 */}
+          {controller.historyFailure !== null && hasMessages ? <div className="error-line" role="alert">
+            <span>没能读取这段对话的完整记录：{controller.historyFailure}</span>
+            <MaterialButton variant="danger" onClick={controller.retryHistory}>重试</MaterialButton>
+          </div> : null}
           {error ? <div className="error-line" role="alert"><span>{error}</span>
             {controller.errorRetry ? <MaterialButton variant="danger" onClick={retry}>重试</MaterialButton> : null}
           </div> : null}
