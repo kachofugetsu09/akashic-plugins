@@ -281,7 +281,7 @@
   font-size: 12px !important;
   font-weight: 400;
   line-height: 18px !important;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 /* 高亮组件加载期间，块头下面先放一个同样的 <pre> 占位：它已经在块里，不再自带块头留白与边框，
@@ -297,7 +297,7 @@
   font-size: 12px !important;
   font-weight: 400;
   line-height: 18px !important;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 /* GFM 任务列表：勾选框自带语义，去掉重复的 disc 标记。 */
@@ -922,6 +922,12 @@
   white-space: nowrap;
 }
 
+/* 本轮与工具组摘要是中文句子（"思考 3 次，调用 5 个工具"），不是工具名：用正文字体，数字等宽。 */
+:is(.turn-process-summary, .tool-group-summary) .tool-step-title {
+  font-family: var(--ak-type-reading);
+  font-variant-numeric: tabular-nums;
+}
+
 .tool-step-summary {
   display: block;
   width: 100%;
@@ -1165,6 +1171,19 @@ button.tool-step-summary:active {
 .tool-result {
   overflow: clip;
 }
+
+/* 统一 diff：增删行用状态色的文字加极淡底色，整行铺满；路径头与 hunk 头退成次级。 */
+.tool-diff-line { display: inline-block; min-inline-size: 100%; }
+.tool-diff-line.is-add {
+  color: var(--ak-color-status-success);
+  background: color-mix(in oklch, var(--ak-color-status-success) 8%, transparent);
+}
+.tool-diff-line.is-del {
+  color: var(--ak-color-status-error);
+  background: color-mix(in oklch, var(--ak-color-status-error) 7%, transparent);
+}
+.tool-diff-line.is-hunk { color: var(--ak-color-status-trace-text); }
+.tool-diff-line.is-meta { opacity: 0.7; }
 
 .tool-result.is-clipped-head {
   mask-image: linear-gradient(to bottom, transparent 0, #000 2.2rem);

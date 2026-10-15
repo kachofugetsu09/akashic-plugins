@@ -279,13 +279,14 @@ function formatMessageTime(value: string) {
 }
 
 const daySeparatorFormatter = new Intl.DateTimeFormat("zh-CN", {
-  month: "numeric",
+  month: "long",
   day: "numeric",
+  weekday: "short",
 });
 
 const daySeparatorYearFormatter = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
-  month: "numeric",
+  month: "long",
   day: "numeric",
 });
 
@@ -296,14 +297,31 @@ export function messageDayKey(value: string | undefined): string {
   return Number.isNaN(date.getTime()) ? "" : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-/** 同年只标月日，跨年补全年份。 */
+/** 分页可能恰好切在工具调用与结果之间：窗口开头的结果找不到调用，只能孤零零显示成"调用不在当前记录中"。
+ * 还有更早历史时先不画，等上一页载入后它会并回所属调用；已到对话开头才按原样显示。 */
+export function withoutLeadingOrphanResults(messages: TimelineMessage[], hasMore: boolean): TimelineMessage[] {
+  if (!hasMore) return messages;
+  let start = 0;
+  while (start < messages.length && messages[start].body.kind === "tool_result") start += 1;
+  return start ? messages.slice(start) : messages;
+}
+
+/** 今天、昨天直接说；同年写"10月14日周二"，跨年补全年份。"10/14" 这类斜杠日期在中文里读起来像分数。 */
 function messageDayLabel(value: string | undefined): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.getFullYear() === new Date().getFullYear()
+  const today = new Date();
+  const days = Math.round((startOfDay(today) - startOfDay(date)) / 86_400_000);
+  if (days === 0) return "今天";
+  if (days === 1) return "昨天";
+  return date.getFullYear() === today.getFullYear()
     ? daySeparatorFormatter.format(date)
     : daySeparatorYearFormatter.format(date);
+}
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
 function DaySeparator({ label }: { label: string }) {

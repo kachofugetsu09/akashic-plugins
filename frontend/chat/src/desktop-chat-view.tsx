@@ -14,7 +14,7 @@ import { ComposerStatsLine } from "./composer-stats-line";
 import { ThinkingPlaceholder } from "./thinking-placeholder";
 import { DesktopComposer, type ComposerApi } from "./desktop-composer";
 import { JobListAction } from "./job-list-action";
-import { DesktopConversationMessages, DesktopTimelineMessages, messageDayKey } from "./desktop-conversation";
+import { DesktopConversationMessages, DesktopTimelineMessages, messageDayKey, withoutLeadingOrphanResults } from "./desktop-conversation";
 import { ReplyActivityView } from "./message-view";
 import { MessageSquarePlus } from "lucide-react";
 import { CompactNavigation } from "./compact-navigation";
@@ -63,6 +63,8 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
     startProjectChat, createProject, continueProject, stopProject, bindDirectory,
   } = controller;
   const inputResult = useMemo(() => lastInputResult(timelineMessages), [timelineMessages]);
+  const pagedTimeline = useMemo(() => withoutLeadingOrphanResults(timelineMessages, historyHasMore),
+    [historyHasMore, timelineMessages]);
   const inputId = messages.filter((message) => message.role === "user").at(-1)?.id ?? inputResult.id;
   // 选了回复引用就是要开始写：焦点直接进输入框（触屏会弹出键盘），不必再点一次。
   const replyTo = useCallback((reply: TimelineReply) => {
@@ -137,7 +139,7 @@ export function DesktopChatView({ embeddedShell, controller }: DesktopChatViewPr
                   loading={historyLoadingOlder}
                   onLoadOlder={() => loadOlderMessages().catch(reportError)}
                 />
-                <DesktopTimelineMessages messages={timelineMessages} activities={replyActivities} refresh={controller.timelineRefresh} status={status}
+                <DesktopTimelineMessages messages={pagedTimeline} activities={replyActivities} refresh={controller.timelineRefresh} status={status}
                   messageElementsRef={messageElementsRef} copiedMessageId={copiedMessageId}
                   onReply={replyTo} onEditInput={editInput} onCopied={handleCopiedMessage} onError={reportError} />
                 <DesktopConversationMessages

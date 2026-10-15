@@ -12,9 +12,11 @@ export function uploadedFileToAttachment(file: UploadedFile): MessageAttachment 
   };
 }
 
+// 完整标题交给 CSS 按实际宽度截断：按字数硬截会让宽屏也只剩 28 个字，侧栏搜不到后半段，
+// 重命名框还会以"..."开头。首条消息可能是整段粘贴，只压成一行并限长防止撑大 DOM。
 export function sessionLabel(session: SessionRow): string {
   const title = session.title?.trim() || session.first_message_content?.trim() || "未命名对话";
-  return title.length > 28 ? `${title.slice(0, 28)}...` : title;
+  return title.replace(/\s+/gu, " ").slice(0, 200);
 }
 
 function artifactUrl(artifactId: string): string {

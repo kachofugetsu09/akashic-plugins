@@ -121,8 +121,10 @@ function PreviewText({ text, tail, className }: { text: string; tail: boolean; c
       motion(preRef.current, [{ opacity: 0.4 }, { opacity: 1 }], 200);
     }
   }, [full]);
-  if (lines.length <= PREVIEW_LINES + PREVIEW_SLACK) return <pre className={className}>{text}</pre>;
-  const shown = full ? text : (tail ? lines.slice(-PREVIEW_LINES) : lines.slice(0, PREVIEW_LINES)).join("\n");
+  const diff = useMemo(() => looksLikeDiff(lines), [lines]);
+  if (lines.length <= PREVIEW_LINES + PREVIEW_SLACK) return <pre className={className}>{diff ? <DiffLines lines={lines} /> : text}</pre>;
+  const visible = full ? lines : tail ? lines.slice(-PREVIEW_LINES) : lines.slice(0, PREVIEW_LINES);
+  const shown = diff ? <DiffLines lines={visible} /> : visible.join("\n");
   const clipped = full ? "" : tail ? " is-clipped-head" : " is-clipped-tail";
   const moreFirst = tail && !full;
   const more = <button ref={moreRef} type="button" className="tool-result-more" onClick={() => {
@@ -136,6 +138,26 @@ function PreviewText({ text, tail, className }: { text: string; tail: boolean; c
     <pre ref={preRef} className={`${className}${clipped}`}>{shown}</pre>
     {moreFirst ? null : more}
   </div>;
+}
+
+// 编辑类工具常把统一 diff 原样回给模型（有时还包在 ```diff 围栏里）。只按行首给增删着色，
+// 不解释 Markdown；文字与复制内容都保持原样。
+function looksLikeDiff(lines: string[]): boolean {
+  return lines.some((line) => line.startsWith("@@ ")) && lines.some((line) => line.startsWith("+++ ") || line.startsWith("--- "));
+}
+
+function DiffLines({ lines }: { lines: string[] }) {
+  return lines.map((line, index) => <span key={index} className={`tool-diff-line${diffLineKind(line)}`}>
+    {line}{index < lines.length - 1 ? "\n" : null}
+  </span>);
+}
+
+function diffLineKind(line: string): string {
+  if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("```")) return " is-meta";
+  if (line.startsWith("@@")) return " is-hunk";
+  if (line.startsWith("+")) return " is-add";
+  if (line.startsWith("-")) return " is-del";
+  return "";
 }
 
 interface ShellResult {

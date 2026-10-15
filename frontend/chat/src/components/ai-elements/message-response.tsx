@@ -15,7 +15,7 @@ import MarkdownRender, {
 } from "markstream-react";
 import "markstream-react/index.px.css";
 import { useReducedMotion } from "motion/react";
-import { CODE_BLOCK_PROPS, ReadingCode, ReadingList, ReadingParagraph, ReadingTable } from "@/markdown-reading-nodes";
+import { CODE_BLOCK_OPTIONS, CODE_BLOCK_PROPS, ReadingCode, ReadingList, ReadingParagraph, ReadingTable } from "@/markdown-reading-nodes";
 import type { MarkdownIt } from "stream-markdown-parser";
 
 function configureMessageMarkdown(markdown: MarkdownIt) {
@@ -131,6 +131,7 @@ export const MessageResponse = memo(function MessageResponse({
         codeBlockStream={isAnimating}
         renderCodeBlocksAsPre={isAnimating}
         codeBlockProps={CODE_BLOCK_PROPS}
+        codeBlockOptions={CODE_BLOCK_OPTIONS}
         codeBlockLightTheme="vitesse-light"
         codeBlockDarkTheme="vitesse-dark"
         parseOptions={{ reuseStableTopLevelNodes: true }}
