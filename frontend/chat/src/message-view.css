@@ -274,7 +274,7 @@
   overflow-x: auto;
   border: 1px solid var(--ak-rule-subtle) !important;
   border-radius: 0 !important;
-  padding: 52px 7px 8px !important;
+  padding: 52px 16px 8px !important;
   color: var(--ak-ink-primary) !important;
   background: var(--ak-paper-quiet) !important;
   font-family: var(--ak-type-technical, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace) !important;
@@ -290,7 +290,7 @@
   margin: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
-  padding: 8px 7px !important;
+  padding: 8px 16px !important;
   color: var(--ak-ink-primary) !important;
   background: transparent !important;
   font-family: var(--ak-type-technical, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace) !important;
@@ -360,6 +360,19 @@
   background-color: var(--ak-paper-quiet);
 }
 
+/* 流式代码块的语言标签：落在预留的 44px 块头位里，几何与落定块头的标题一致（左 17px、垂直居中），不随代码横滚。 */
+.reading-code-scroll.is-streaming { position: relative; }
+.reading-code-stream-label {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 1px;
+  inset-inline-start: 17px;
+  display: flex;
+  block-size: 44px;
+  align-items: center;
+  pointer-events: none;
+}
+
 /* 横滚提示：哪边还有被藏住的字，哪边渐隐 28px；滚到头渐隐消失。只遮代码区，不遮块头。 */
 .reading-code-scroll { --code-edge: 28px; }
 .reading-code-scroll[data-overflow="end"] :is(diffs-container, pre) {
@@ -390,9 +403,12 @@
   display: none;
 }
 
-:where(.agent-content, .process-markdown) .code-header-title {
+/* markstream 自带 `:where(.markstream-react) .code-block-header .code-header-title`（写死的灰、继承字体），特异性需高过它；
+   流式标签用同一类名，两态同一字体、字重与墨色。 */
+:is(.agent-content, .process-markdown) :is(.code-block-header, .reading-code-scroll) .code-header-title {
   font-family: var(--ak-type-technical);
   font-size: var(--chat-type-caption, 0.75rem);
+  font-weight: 500;
   color: var(--ak-ink-secondary);
 }
 
@@ -410,8 +426,20 @@
 }
 
 /* 两条渲染路径共用阅读结构，源 Markdown 与 DOM 中的文字保持原样。 */
-:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading :where(h1, h2, h3, h4):first-child {
+/* 只清整段回复首块的上边距（标题、表格、代码、引用都算）。富渲染路径每个块都包在 node-slot > node-content 里，
+   按 :first-child 写会命中每一个标题，让标题上方比下方还窄。 */
+:is(.agent-content, .process-markdown, .user-bubble) :is(
+  .markdown-reading .markdown-renderer > .node-slot:first-child > .node-content,
+  .static-message-response
+) > :first-child {
   margin-block-start: 0;
+}
+/* 首块是代码、Mermaid、公式或数学兜底时，真实边距在框上（多为 !important）：框可能是首块本身（流式数学兜底），也可能在包裹层里面，
+   两种都清；列表、引用、表格里嵌着的不算首块。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .markdown-renderer > .node-slot:first-child > .node-content > :first-child:is(.code-block-container, pre[data-markstream-pre="1"], .mermaid-block, .markstream-deferred-source, .math-block-node),
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .markdown-renderer > .node-slot:first-child > .node-content > :first-child
+  :is(.code-block-container, pre[data-markstream-pre="1"], .mermaid-block, .markstream-deferred-source, .math-block-node, .katex-display):not(:is(li, blockquote, td) *) {
+  margin-block-start: 0 !important;
 }
 
 :is(.agent-content, .process-markdown, .user-bubble) .markdown-reading .reading-emphasis:not(li p) {
@@ -552,6 +580,9 @@
   max-width: 20rem;
   border-block-end: 1px solid var(--ak-rule-subtle);
 }
+
+/* 表格没有外框，只有行线：首列文字贴正文左缘，不比段落缩进一格。 */
+:is(.agent-content, .process-markdown, .user-bubble) .markdown-reading :where(th, td):first-child { padding-inline-start: 0; }
 
 /* 紧凑外壳（触屏为主）列多时宁可横滚，也不把每列挤成三四个字一行；宽屏鼠标横滚别扭，仍以折行为主。 */
 /* 条件与 COMPACT_SHELL 一致：含横屏触屏的矮视口。 */
@@ -1206,11 +1237,12 @@ button.tool-step-summary:active {
   line-height: 1.5;
 }
 
+/* 退一步但要读得清：用 muted 墨色（浅色 4.9:1、深色 5.6:1）；原 52% 透明墨色在浅色纸面上 12px 只有 3.6:1。 */
 .tool-parameter dd,
 .tool-result {
   overflow-wrap: anywhere;
   margin: 0;
-  color: color-mix(in oklch, var(--ak-color-text-primary) 52%, transparent);
+  color: var(--ak-ink-muted);
   font-family: var(--ak-type-technical, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 0.75rem;
   line-height: 1.5;

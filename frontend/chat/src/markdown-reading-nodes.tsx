@@ -1,6 +1,6 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { CodeBlockNode, ListNode, ParagraphNode as ParagraphRenderer, PreCodeNode, type NodeComponentProps } from "markstream-react";
+import { CodeBlockNode, ListNode, ParagraphNode as ParagraphRenderer, PreCodeNode, languageMap, resolveLanguageId, type NodeComponentProps } from "markstream-react";
 import type { CodeBlockNode as CodeData, ListNode as ListData, ParagraphNode, ParsedNode, TableNode as TableData } from "stream-markdown-parser";
 import { copyReadingCode, isConceptLabel, isNumericColumn, isPlainTextLanguage, stripConceptSeparator, watchOverflowEdges, writeOverflowEdges } from "./markdown-reading";
 
@@ -17,7 +17,8 @@ export const CODE_BLOCK_PROPS = {
 
 // 代码不折行：折行会把缩进与对齐打散，窄屏读代码更难；长行在代码块自己的区域里横向滚动。
 // 流式期间的 <pre> 也不折行（message-view.css），两种状态行数一致，换手时块高不变。
-export const CODE_BLOCK_OPTIONS = { overflow: "scroll" } as const;
+// 高亮组件把行内边距写死为 1ch，代码比块头语言标签左缩约 9px；注入 shadow 样式改为 16px，与块头、生成中的普通 pre 同一左缘。
+export const CODE_BLOCK_OPTIONS = { overflow: "scroll", unsafeCSS: "[data-line] { padding-inline: 16px; }" } as const;
 
 /** 展示判断只读可见文本，不解析 raw 或猜测内容的用途。 */
 function nodeText(node: ParsedNode): string {
@@ -183,11 +184,15 @@ function HighlightedCode(props: NodeComponentProps<CodeData>) {
   </div>;
 }
 
-// 生成中的代码不高亮，但横滚提示与落定后一致。
+// 生成中的代码不高亮，但横滚提示与落定后一致；预留的块头位先写上与落定块头同名的语言，换手时只多出复制钮。
 function StreamingCode({ node }: { node: CodeData }) {
   const ref = useRef<HTMLDivElement>(null);
   useCodeOverflowEdges(ref);
-  return <div ref={ref} className="reading-code-scroll">
+  const id = resolveLanguageId(node.language);
+  // 映射外的语言按落定块头的规则只把首字母大写（myLang → MyLang）。
+  const label = languageMap[id] ?? (id ? `${id.charAt(0).toUpperCase()}${id.slice(1)}` : "");
+  return <div ref={ref} className="reading-code-scroll is-streaming">
+    {label ? <span className="reading-code-stream-label code-header-title" aria-hidden="true">{label}</span> : null}
     <PreCodeNode node={node} showLineNumbers={false} />
   </div>;
 }
