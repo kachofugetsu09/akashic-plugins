@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -23,7 +24,12 @@ class ProfileBusy(RuntimeError):
     pass
 
 
-_INSTALL_ROOT = Path(__file__).resolve().parents[2]
+# Core 源码根与插件代码根都标为 <install>：monorepo 的插件在 Core 根下的 plugins/，
+# 制品库的插件在 sources/<名字>/<内容提交>/；卡顿诊断按 <install>/ 前缀挑插件代码帧。
+_CORE_ROOT = Path(inspect.getfile(ServiceKey)).resolve().parents[2]
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_PLUGINS_ROOT = _PACKAGE_DIR.parent if _PACKAGE_DIR.name == "runtime_diagnostics" else _PACKAGE_DIR.parents[1]
+_INSTALL_ROOTS = ((_CORE_ROOT, "<install>"), (_PLUGINS_ROOT, "<install>"))
 
 # 安全虚拟标签：tracemalloc 对非文件来源给出的形如 <frozen importlib._bootstrap> 的名字。
 # 它不含路径分隔符，不是文件系统路径，原样保留不构成身份泄漏。
@@ -45,7 +51,7 @@ def _export_locator(
     if not path.is_absolute():
         # 相对路径同样可能带出身份目录（home/alice/private/app.py），只留基名。
         return path.name
-    effective = roots if roots is not None else ((_INSTALL_ROOT, "<install>"), (Path.home(), "~"))
+    effective = roots if roots is not None else (*_INSTALL_ROOTS, (Path.home(), "~"))
     for root, label in effective:
         try:
             relative = path.relative_to(root)

@@ -147,3 +147,8 @@ __all__ = [
     "MessagePagePort", "MessageReaderPort", "SessionAdminPort",
     "SessionEntryPort", "SessionPagePort", "Message",
 ]
+
+
+# 通道停止接纳（停机或热更新换代）；长连接据此正常结束，由客户端重连到新一代。
+class ChannelClosed(RuntimeError):
+    pass
