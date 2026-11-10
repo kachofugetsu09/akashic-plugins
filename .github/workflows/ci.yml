@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 检查逻辑只维护在 Core：用 Core main 与本仓库的提交合成源码后跑同一套检查。
+jobs:
+  check:
+    uses: kachofugetsu09/akashic-agent/.github/workflows/ci.yml@main
+    with:
+      plugins_commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      plugins_base: ${{ github.event.pull_request.base.sha || '' }}
+  boundary:
+    uses: kachofugetsu09/akashic-agent/.github/workflows/plugin-boundary.yml@main
+    with:
+      plugins_commit: ${{ github.event.pull_request.head.sha || github.sha }}
+      plugins_base: ${{ github.event.pull_request.base.sha || '' }}
