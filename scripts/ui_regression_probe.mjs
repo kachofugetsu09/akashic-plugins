@@ -25,7 +25,9 @@ const SEND_TEXT = 'UI 回归探针：请回复一句话';
 // 唯一放行的良性失败：外壳按内容寻址 URL 用 cache: 'only-if-cached' 试探 HTTP 缓存，Chromium 未命中时
 // 记为 net::ERR_CACHE_MISS 并在控制台报 "Failed to load resource"，随后回落到 bootstrap 内联字节
 // （frontend/dashboard/src/webHost.ts importModule）。只按这个 URL 加这个错误码放行。
-const benignCacheProbe = (url, error) => /\/api\/chat\/web-ui\/module\?/.test(url) && /ERR_CACHE_MISS/.test(error ?? '');
+// 模块从启动响应的内联字节执行；页面空闲 20 秒后才用 fetch 预热 HTTP 缓存，切页或关页会中断这些预热，
+// 只缓存探测失败（ERR_CACHE_MISS）和预热被取消（ERR_ABORTED）不算资源故障，模块真实加载由锚点与插槽判定。
+const benignCacheProbe = (url, error) => /\/api\/chat\/web-ui\/module\?/.test(url) && /ERR_CACHE_MISS|ERR_ABORTED/.test(error ?? '');
 const report = { pass: false, url: base, startedAt: new Date().toISOString(), baseline: args.baseline ?? null,
   failures: [], resources: { webUi: [], pluginUi: [], pageRequests: [], console: [] },
   tokens: {}, anchors: {}, slots: [], screenshots: {}, send: null };
@@ -105,7 +107,7 @@ function pageSet(session) {
     session && { name: 'conversation', path: '/?session=' + encodeURIComponent(session), ready: '.timeline-output',
       anchors: [...chrome,
         { key: 'user-bubble', selector: '.user-bubble', expect: ['background', 'radius'] },
-        { key: 'assistant-text', selector: '.timeline-output .markdown-reading', expect: [] },
+        { key: 'assistant-text', selector: '.timeline-output .agent-content :is(.markdown-reading, .plain-message-response)', expect: [] },
         { key: 'heading', selector: '.conversation-heading', expect: [], fixed: true }],
       slots: ['header.meta', 'header.end', 'message.meta', 'message.actions', 'turn.after_answer', 'composer.toolbar', 'chat.notice'] },
     { name: 'settings-models', path: '/#models', ready: '.settings-provider-list, .settings-section', anchors: [...settings,
@@ -226,9 +228,11 @@ async function captureAnchors(page, specs, catalog) {
       range.selectNodeContents(element);
       const box = element.getBoundingClientRect();
       const content = range.getBoundingClientRect();
-      const width = Math.round(Math.max(box.width, content.width));
-      const height = Math.round(Math.max(box.height, content.height));
-      const result = { ...Object.fromEntries(props.map(name => [name, style[name]])), width, height, ...spec };
+      // 固定布局只量自身盒子：侧栏这类滚动容器的内容高度随会话数量变化，不是样式。
+      const width = Math.round(spec.fixed ? box.width : Math.max(box.width, content.width));
+      const height = Math.round(spec.fixed ? box.height : Math.max(box.height, content.height));
+      const result = { ...Object.fromEntries(props.map(name => [name, style[name]])), width, height,
+        ...(spec.fixed ? { sizeMode: 'box' } : {}), ...spec };
       // 插件根自身常不带样式；前 6 个出盒后代的盒模型签名能反映插件样式表是否生效。
       if (spec.plugin) {
         result.subtree = [...element.querySelectorAll('*')].filter(node => !(node instanceof SVGElement))
@@ -288,7 +292,8 @@ function judgeAnchors(name, anchors) {
     if (!now || now.missing) { fail('anchor.disappeared', { key }, name); continue; }
     const diff = STYLE_KEYS.filter(prop => before[prop] !== now[prop])
       .map(prop => ({ prop, baseline: before[prop], now: now[prop] }));
-    if (before.fixed) {
+    // 旧基线按内容范围量固定布局，与按盒子量的结果不可比，只比样式。
+    if (before.fixed && before.sizeMode === now.sizeMode) {
       for (const prop of ['width', 'height']) {
         if (Math.abs(before[prop] - now[prop]) > Math.max(24, before[prop] * 0.25)) diff.push({ prop, baseline: before[prop], now: now[prop] });
       }
@@ -372,13 +377,15 @@ async function sendMessage(context) {
     await page.keyboard.press('Enter');
     await page.waitForFunction(text => {
       const sent = [...document.querySelectorAll('.timeline-input')].find(node => node.textContent.includes(text));
-      const reply = [...document.querySelectorAll('.timeline-output .markdown-reading')].at(-1);
+      const REPLY = '.timeline-output .agent-content :is(.markdown-reading, .plain-message-response)';
+      const reply = [...document.querySelectorAll(REPLY)].at(-1);
       const busy = document.querySelector('.composer-action-button')?.dataset.mode === 'stop';
       const after = sent && reply && sent.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING;
       return Boolean(after) && !busy && Boolean(reply.textContent.trim());
     }, SEND_TEXT, { timeout: Math.max(timeout, 60_000) });
     const result = await page.evaluate(() => {
-      const reply = [...document.querySelectorAll('.timeline-output .markdown-reading')].at(-1);
+      const REPLY = '.timeline-output .agent-content :is(.markdown-reading, .plain-message-response)';
+      const reply = [...document.querySelectorAll(REPLY)].at(-1);
       const box = reply.getBoundingClientRect();
       return { session: sessionStorage.getItem('akashic.chat.active-session'), reply: reply.textContent.trim().slice(0, 200),
         fontFamily: getComputedStyle(reply).fontFamily, size: [Math.round(box.width), Math.round(box.height)],
