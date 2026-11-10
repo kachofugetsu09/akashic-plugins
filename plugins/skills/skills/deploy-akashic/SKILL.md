@@ -40,6 +40,17 @@ description: 用户明确授权 Akashic 合并 PR 并更新当前 Docker 实例�
    ```
 
    仅在本次明确要求备份时加 `--backup`；默认不备份。
+
+   只更新插件仓库（kachofugetsu09/akashic-plugins）里的个别插件、Core 不变时，合并插件仓库 PR 后
+   用 `git ls-remote --exit-code https://github.com/kachofugetsu09/akashic-plugins.git refs/heads/main`
+   取得插件仓库 main 的完整 SHA，不传 `--commit`（默认沿用当前 Core），按插件名逐个覆盖：
+
+   ```sh
+   akashic-release submit --plugin <插件名>@<插件仓库完整SHA>
+   ```
+
+   覆盖会一直生效，直到 Core 的 `plugins.lock` 包含这个提交时自动退役；用户要求撤回时用
+   `--reset-plugin <插件名>`。部署 Core 时不需要重复传已有的覆盖。
    CLI 自动读取 Shell 的当前调用身份，不需要填写 session、Turn 或 boot ID。
    部署失败时，宿主会把失败原因送回本会话并唤醒你；用户要求把结果送到另一个对话会话时，
    加 `--session <会话编号>`。
