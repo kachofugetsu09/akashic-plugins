@@ -24,7 +24,7 @@ const baseline = args.baseline ? JSON.parse(readFileSync(resolve(args.baseline, 
 const SEND_TEXT = 'UI 回归探针：请回复一句话';
 // 唯一放行的良性失败：外壳按内容寻址 URL 用 cache: 'only-if-cached' 试探 HTTP 缓存，Chromium 未命中时
 // 记为 net::ERR_CACHE_MISS 并在控制台报 "Failed to load resource"，随后回落到 bootstrap 内联字节
-// （frontend/dashboard/src/webHost.ts importModule）。只按这个 URL 加这个错误码放行。
+// （frontend/plugins/ui/dashboard/src/webHost.ts importModule）。只按这个 URL 加这个错误码放行。
 // 模块从启动响应的内联字节执行；页面空闲 20 秒后才用 fetch 预热 HTTP 缓存，切页或关页会中断这些预热，
 // 只缓存探测失败（ERR_CACHE_MISS）和预热被取消（ERR_ABORTED）不算资源故障，模块真实加载由锚点与插槽判定。
 const benignCacheProbe = (url, error) => /\/api\/chat\/web-ui\/module\?/.test(url) && /ERR_CACHE_MISS|ERR_ABORTED/.test(error ?? '');
