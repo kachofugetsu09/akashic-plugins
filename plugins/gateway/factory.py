@@ -30,6 +30,8 @@ from .status_feed import RuntimeReplyStatus
 
 class AdoptDistributionParams(StrictModel):
     root: str = Field(min_length=1, max_length=4096)
+    # 发布器为每次热更新生成；同一 id 再次调用只查询状态。
+    update_id: str = Field(min_length=1, max_length=128)
 
 
 def build_control_service(ctx: Context, *, workspace_token: str | None) -> ControlService:
@@ -95,9 +97,10 @@ def build_control_service(ctx: Context, *, workspace_token: str | None) -> Contr
         gate.abort(request.request_id)
         return {"accepting": gate.accepting}
 
-    # 发布器热更新内置插件：换上制品库里的发行版，宿主只换代内容变化的插件，失败整体退回。
+    # 发布器热更新内置插件：宿主任务换上制品库里的发行版并立即返回，发布器用同一 update_id 轮询终态。
     async def adopt_distribution(params: BaseModel) -> object:
-        return await updates.adopt_distribution(ctx, cast(AdoptDistributionParams, params).root)
+        request = cast(AdoptDistributionParams, params)
+        return await updates.adopt_distribution(ctx, request.root, request.update_id)
 
     return ControlService(
         ctx.require(MESSAGE_CATALOG), ctx.runtime.workspace, accept=accept,
