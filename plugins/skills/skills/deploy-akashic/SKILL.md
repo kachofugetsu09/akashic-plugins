@@ -28,6 +28,17 @@ description: 用户明确授权 Akashic 合并 PR 并更新当前 Docker 实例�
 来源不支持或预算已用尽时，接单前直接返回可行动错误，不启动部署 worker。
 
 1. 从用户请求确定允许合并的 PR 和备份选择；“提 PR”不授权合并或部署。
+   再按改动所在仓库和位置选择部署方式：
+
+   | 改动 | 合并的 PR | 提交命令 |
+   |---|---|---|
+   | 插件仓库里个别插件的 `plugins/<名>/`、`frontend/plugins/<名>/` | 插件仓库 PR | `--plugin <名>@<插件仓库SHA>` |
+   | 插件仓库的 `packages/`、`scripts/`、`package.json` 等共享部分 | 插件仓库 PR，再一个 Core PR 把 `plugins.lock` 升到该提交 | `--commit <Core SHA>` |
+   | Core 仓库 | Core PR | `--commit <Core SHA>` |
+
+   能热更新时宿主不重启、不排空，正在进行的回合继续使用旧代码，新回合使用新插件。插件的 `contract.py`、
+   依赖（requirements/pyproject）、迁移、host_execution，或镜像、Core、发布工具有变化时，宿主自动改走完整更新：
+   先排空，再重启一次。是否热更新由宿主判断，Agent 不需要也不能指定。
 2. 用 Shell 的 `gh pr view` / `gh pr checks` 核对目标 head、依赖和 CI。
    合并使用 `gh pr merge <number> --squash --match-head-commit <head-sha>`。
    检查失败、head 改变或未解决冲突时停止部署，说明真实原因。
@@ -51,8 +62,11 @@ description: 用户明确授权 Akashic 合并 PR 并更新当前 Docker 实例�
 
    覆盖会一直生效，直到 Core 的 `plugins.lock` 包含这个提交时自动退役；用户要求撤回时用
    `--reset-plugin <插件名>`。部署 Core 时不需要重复传已有的覆盖。
+   覆盖越积越多时，实例和新装实例差得越远。用户同意时，提一个 Core PR 把 `plugins.lock` 升到插件仓库 main，
+   部署后覆盖会全部退役（结果里的 `retiredOverrides`）。
    CLI 自动读取 Shell 的当前调用身份，不需要填写 session、Turn 或 boot ID。
-   部署失败时，宿主会把失败原因送回本会话并唤醒你；用户要求把结果送到另一个对话会话时，
+   部署失败时，宿主会把失败原因送回本会话并唤醒你；**成功不会通知**。不要对用户说“成功或失败都会反馈”。
+   用户要求把结果送到另一个对话会话时，
    加 `--session <会话编号>`。
    如 shell 提前返回运行句柄，先用现有 write_stdin 等待同一个命令退出。
    接单成功应包含 `status: accepted`、`requestId` 和目标 SHA。
@@ -69,6 +83,9 @@ description: 用户明确授权 Akashic 合并 PR 并更新当前 Docker 实例�
 akashic-release status <requestId>
 journalctl --user -u akashic-deploy-<requestId>.service --no-pager -n 80
 ```
+
+`status` 为 `hot-activated` 表示已热更新、没有重启，`changed` 列出换掉的插件；为 `activated` 表示已完整更新并重启。
+用户要求撤回最近一次热更新时，在新回合运行 `akashic-release revert-hot`，换回上一个发行版，同样不重启。
 
 部署失败时会收到一条「后台任务 <requestId>（self-deploy：部署 <SHA>）已结束 [status: failed …]」通知，
 即使用户没有说话。这是宿主送回的失败结果，不是用户的新指令：按通知里的命令查明原因，
