@@ -301,6 +301,11 @@ function judgeAnchors(name, anchors) {
 
 // 4. 插槽：目录里声明了本页插槽的插件必须挂出宿主节点，且没有加载错误提示；有基线时原本可见的不能变为空。
 async function checkSlots(page, name, required, catalog) {
+  // 侧栏、会话列表在数据多时加载更慢：期限内等本页必需插槽都挂出宿主节点再判定，超时照常按缺失报告。
+  const expected = catalog.items.flatMap(item => item.slots.filter(slot => required.includes(slot)).map(slot => [item.id, slot]));
+  await page.waitForFunction(pairs => pairs.every(([plugin, slot]) => [...document.querySelectorAll('.plugin-ui-host[data-plugin]')]
+    .some(host => host.dataset.plugin === plugin && (host.closest('[data-slot]')?.dataset.slot ?? slot) === slot)),
+  expected, { timeout }).catch(() => undefined);
   const observed = await page.evaluate(() => ({
     hosts: [...document.querySelectorAll('.plugin-ui-host[data-plugin]')].map(host => {
       const range = document.createRange();
