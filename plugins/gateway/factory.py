@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import cast
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent.plugin_composition import Context
 from plugins.channels.contract import CHANNEL_INPUT_V2, ChannelInboundMessage
@@ -22,9 +22,16 @@ from plugins.ledger.contract import Message
 from .contract import RpcMethod
 from .errors import RuntimeClosedError
 from .protocol.errors import JsonRpcError, SERVER_OVERLOADED
+from .protocol.models import StrictModel
 from .runtime_stop import CancelStopParams, StopParams, prepare_stop
 from .service import ControlService
 from .status_feed import RuntimeReplyStatus
+
+
+class AdoptDistributionParams(StrictModel):
+    root: str = Field(min_length=1, max_length=4096)
+    # 发布器为每次热更新生成；同一 id 再次调用只查询状态。
+    update_id: str = Field(min_length=1, max_length=128)
 
 
 def build_control_service(ctx: Context, *, workspace_token: str | None) -> ControlService:
@@ -90,6 +97,11 @@ def build_control_service(ctx: Context, *, workspace_token: str | None) -> Contr
         gate.abort(request.request_id)
         return {"accepting": gate.accepting}
 
+    # 发布器热更新内置插件：宿主任务换上制品库里的发行版并立即返回，发布器用同一 update_id 轮询终态。
+    async def adopt_distribution(params: BaseModel) -> object:
+        request = cast(AdoptDistributionParams, params)
+        return await updates.adopt_distribution(ctx, request.root, request.update_id)
+
     return ControlService(
         ctx.require(MESSAGE_CATALOG), ctx.runtime.workspace, accept=accept,
         attachments=ctx.require(CHANNEL_ATTACHMENT_READ).resolve_refs,
@@ -100,5 +112,6 @@ def build_control_service(ctx: Context, *, workspace_token: str | None) -> Contr
         control_frames=ctx.require(CONTROL_FRAMES), resolve_method=resolve_method,
         request_scope=ctx.runtime_scope,
         methods={"runtime/prepare-stop": RpcMethod(StopParams, stop),
-                 "runtime/cancel-stop": RpcMethod(CancelStopParams, cancel_stop)},
+                 "runtime/cancel-stop": RpcMethod(CancelStopParams, cancel_stop),
+                 "plugin/adopt-distribution": RpcMethod(AdoptDistributionParams, adopt_distribution)},
     )
