@@ -28,8 +28,14 @@ git -C /tmp/release.git ls-tree -r release/<name>      # 看产物内容
 
 安装者：用 Core 的 `akashic pkg install <name>`，它读取 `release/<name>` 的最新提交。
 
+## 层级声明
+
+边界门禁要求每个插件声明层级（core 或 extra）：
+
+- 从 Core 迁出的插件：Core 已把它列在 `plugin_boundary.toml` 的 `[tiers].external`，这里不用声明。
+- extra 里新建的插件：写进仓库根的 `extra_tiers.toml`（只有 `extra = ["name"]`，只能追加 extra 层，不能改写 Core 的声明）。CI 合成时把它放到合成树根目录。
+
 ## 升固定的 Core 版本
 
 1. 把 `CORE_REF` 改成新的 Core 提交，提 PR；CI 会用新版本重新跑门禁和构建。
 2. 如果产物的 tree 变了（共享包升级导致），合并后对应分支会自动推进；没变就什么都不发生。
-3. 新增插件前，先让 Core 的 `plugin_boundary.toml` `[tiers]` 声明它，再升 `CORE_REF`。

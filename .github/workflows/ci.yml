@@ -79,6 +79,12 @@ jobs:
           ruff check $names
           pyright --level error $names
 
+      - name: Run plugin tests
+        working-directory: synth
+        run: |
+          dirs=$(ls -d ../extra/tests/*/ 2>/dev/null | xargs -n1 basename | sed 's#^#tests/#' | tr '\n' ' ')
+          if [ -n "$dirs" ]; then pytest -q $dirs; else echo "no plugin tests"; fi
+
       - name: Check frontend
         working-directory: synth
         run: |

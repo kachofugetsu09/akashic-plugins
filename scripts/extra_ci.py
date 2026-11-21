@@ -17,6 +17,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 # 与 Core 相同的相对布局：这些目录里的内容覆盖到 Core 检出的同名位置。
 OVERLAY_DIRS = ("plugins", "frontend/plugins", "tests")
+EXTRA_TIERS_FILE = "extra_tiers.toml"
 _COMMIT_ENV = {
     "GIT_AUTHOR_NAME": "extra-ci", "GIT_AUTHOR_EMAIL": "extra-ci@akashic.invalid",
     "GIT_COMMITTER_NAME": "extra-ci", "GIT_COMMITTER_EMAIL": "extra-ci@akashic.invalid",
@@ -49,7 +50,10 @@ def compose(core: Path, ref: str, out: Path) -> None:
             if source.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
                 shutil.copytree(source, target)
-    # 3. 提交成单个提交，供 Core 的脚本按提交读取。
+    # 3. 层级声明文件（如有）放到合成树根目录，边界门禁自动读取。
+    if (ROOT / EXTRA_TIERS_FILE).is_file():
+        shutil.copy(ROOT / EXTRA_TIERS_FILE, out / EXTRA_TIERS_FILE)
+    # 4. 提交成单个提交，供 Core 的脚本按提交读取。
     _ = run("git", "init", "-q", "-b", "compose", cwd=out)
     _ = run("git", "add", "-A", "-f", cwd=out)
     _ = run("git", "-c", "commit.gpgSign=false", "commit", "-q", "-m", f"compose core {ref}", cwd=out, env=_COMMIT_ENV)
