@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# PR 之间互相取消；main 上的构建与发布排成一条队，不取消正在跑的发布。
+# 排队中的运行只保留最新一个，而每次运行都按自己的提交全量构建，所以最新的一个总是包含之前的改动。
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Core 的检出路径与合成源码路径；Core 版本只由 CORE_REF 决定。
+  CORE_DIR: ${{ github.workspace }}/core
+  SYNTH_DIR: ${{ github.workspace }}/synth
+  REMOTE_URL: ${{ github.server_url }}/${{ github.repository }}.git
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+        with:
+          path: extra
+
+      - name: Read pinned Core version
+        id: pin
+        run: echo "ref=$(tr -d '[:space:]' < extra/CORE_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Core
+        uses: actions/checkout@v4
+        with:
+          repository: kachofugetsu09/akashic-agent
+          ref: ${{ steps.pin.outputs.ref }}
+          path: core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          prune-cache: false
+          cache-dependency-glob: core/requirements*.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Compose Core and extra sources
+        run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+      - name: Install dependencies
+        working-directory: synth
+        run: |
+          uv venv .venv --seed --python 3.12
+          uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          echo "$SYNTH_DIR/.venv/bin" >> "$GITHUB_PATH"
+          npm ci --ignore-scripts
+
+      # 契约检查与 Core 版本绑定：门禁、类型与样式合同都用固定版本 Core 自带的那一套。
+      - name: Plugin boundary gate
+        working-directory: synth
+        run: python scripts/plugin_boundary.py check
+
+      - name: Lint and type check Python
+        working-directory: synth
+        run: |
+          names=$(python -c 'import pathlib; print(" ".join(f"plugins/{p.name}" for p in sorted(pathlib.Path("../extra/plugins").iterdir()) if p.is_dir()))')
+          ruff check $names
+          pyright --level error $names
+
+      - name: Check frontend
+        working-directory: synth
+        run: |
+          npm run typecheck
+          npm run check:css-tokens
+          npm run check:motion
+
+      # 构建全部插件前端并在裸仓库里生成 release 分支；已有分支先从远端取下，tree 没变就不推进。
+      - name: Build release branches
+        run: |
+          python extra/scripts/extra_ci.py build --core "$CORE_DIR" --synth "$SYNTH_DIR" \
+            --bare "$RUNNER_TEMP/release.git" --plan "$RUNNER_TEMP/plan.json" --remote "$REMOTE_URL"
+
+      - name: Upload build result
+        if: github.event_name != 'pull_request'
+        run: tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/build.tgz" release.git plan.json
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build
+          path: ${{ runner.temp }}/build.tgz
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-build
+          path: ${{ runner.temp }}
+
+      # 只发布 main 当前的最新提交：重跑旧运行或乱序时直接跳过，不会把分支推回旧内容。
+      - name: Skip if this commit is no longer the tip of main
+        id: tip
+        run: |
+          tip=$(git ls-remote "$REMOTE_URL" refs/heads/main | cut -f1)
+          if [ "$tip" = "$GITHUB_SHA" ]; then echo "current=true" >> "$GITHUB_OUTPUT"; else echo "stale, tip is $tip; skip"; fi
+
+      # 租约保证远端分支仍停在构建时看到的提交，否则推送失败而不是覆盖更新的内容。
+      - name: Push changed release branches
+        if: steps.tip.outputs.current == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP/build.tgz"
+          python scripts/extra_ci.py push --bare "$RUNNER_TEMP/release.git" --plan "$RUNNER_TEMP/plan.json" \
+            --remote "https://x-access-token:${GITHUB_TOKEN}@${REMOTE_URL#https://}"

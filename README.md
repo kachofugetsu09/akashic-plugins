@@ -1,0 +1,35 @@
+# akashic-plugins
+
+Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件构建成完整的插件根，推到 `release/<插件名>` 分支；Core 的 `akashic pkg` 从这些分支安装和升级。
+
+## 分支约定
+
+- `main`：源码。每个插件一个目录，布局与 Core 完全相同：
+  - `plugins/<name>/`：后端（`plugin.py` 等）
+  - `frontend/plugins/<name>/`：前端源码
+  - `tests/<name>/`：随插件走的测试（可选，只参与 CI，不进 release）
+- `release/<name>`：构建产物，插件根（`plugin.py` 在根，含编译后的 `web_module.*`、`plugin_ui.js`、`static/`）。无父提交、作者和时间固定、说明只含名字和 tree，所以提交 SHA 完全由内容决定；tree 不变就不推进。不要手工改，也不要对它们设分支保护（CI 用默认 `GITHUB_TOKEN` 带租约强推）。
+- `CORE_REF`：固定的 Core 提交。前端共享包（`packages/`）、构建脚本、边界门禁、pyright/ruff 配置全部取自这个版本的 Core，共享包不发 npm。
+
+## CI
+
+PR 与 main 都会：检出固定版本 Core，把本仓库的 `plugins/`、`frontend/plugins/`、`tests/` 覆盖到 Core 同名位置合成一份源码，然后跑插件边界门禁、ruff、pyright、前端类型与样式合同，并构建全部插件的前端和 release 分支。main 上构建通过后，只推 tree 有变化的分支；同一时间只有一个发布在跑，且只发布 main 当前的最新提交。
+
+## 本地构建与验证
+
+```bash
+git clone https://github.com/kachofugetsu09/akashic-agent core && git -C core checkout "$(cat CORE_REF)"
+python scripts/extra_ci.py compose --core core --synth /tmp/synth
+python scripts/extra_ci.py build --core core --synth /tmp/synth --bare /tmp/release.git --plan /tmp/plan.json
+git -C /tmp/release.git ls-tree -r release/<name>      # 看产物内容
+```
+
+门禁与类型检查在合成目录里跑（需要 `uv pip install -r requirements-dev.txt -e sdk/python` 和 `npm ci`）：`python scripts/plugin_boundary.py check`、`ruff check plugins/<name>`、`pyright plugins/<name>`、`npm run typecheck`。
+
+安装者：用 Core 的 `akashic pkg install <name>`，它读取 `release/<name>` 的最新提交。
+
+## 升固定的 Core 版本
+
+1. 把 `CORE_REF` 改成新的 Core 提交，提 PR；CI 会用新版本重新跑门禁和构建。
+2. 如果产物的 tree 变了（共享包升级导致），合并后对应分支会自动推进；没变就什么都不发生。
+3. 新增插件前，先让 Core 的 `plugin_boundary.toml` `[tiers]` 声明它，再升 `CORE_REF`。
