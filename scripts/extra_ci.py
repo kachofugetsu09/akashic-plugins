@@ -15,6 +15,8 @@ import tarfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from extra_index import build_index  # noqa: E402
 # 与 Core 相同的相对布局：这些目录里的内容覆盖到 Core 检出的同名位置。
 OVERLAY_DIRS = ("plugins", "frontend/plugins", "tests")
 EXTRA_TIERS_FILE = "extra_tiers.toml"
@@ -65,18 +67,46 @@ def release_heads(bare: Path) -> dict[str, str]:
     return dict(line.split() for line in out.splitlines())
 
 
+# index 分支的固定身份与时间：与 release 分支同一套规则，提交只由 tree 决定。
+_INDEX_ENV = {
+    "GIT_AUTHOR_NAME": "Akashic release", "GIT_AUTHOR_EMAIL": "release@akashic.invalid",
+    "GIT_COMMITTER_NAME": "Akashic release", "GIT_COMMITTER_EMAIL": "release@akashic.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000", "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+}
+
+
+# 把 index.json 写成只含这一个文件的无父提交；内容不变则不推进分支。返回与 release 行同形的状态行。
+def publish_index(bare: Path, text: str, old: str) -> dict[str, str]:
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=bare, input=text, check=True,
+                          stdout=subprocess.PIPE, text=True).stdout.strip()
+    tree = subprocess.run(["git", "mktree"], cwd=bare, input=f"100644 blob {blob}\tindex.json\n", check=True,
+                          stdout=subprocess.PIPE, text=True).stdout.strip()
+    old_tree = run("git", "rev-parse", f"{old}^{{tree}}", cwd=bare) if old else ""
+    if old_tree == tree:
+        return {"name": "index", "branch": "index", "tree": tree, "sha": old, "status": "unchanged", "old": old}
+    sha = run("git", "-c", "commit.gpgSign=false", "commit-tree", tree, "-m", f"index {tree}\n", cwd=bare, env=_INDEX_ENV)
+    _ = run("git", "update-ref", "refs/heads/index", sha, old or "0" * 40, cwd=bare)
+    return {"name": "index", "branch": "index", "tree": tree, "sha": sha, "status": "updated", "old": old}
+
+
 # 构建：先把远端已有 release 分支取进裸仓库（tree 对比的基准），再调用 Core 的脚本，写出发布计划。
 def build(core: Path, synth: Path, bare: Path, remote: str | None, plan: Path) -> None:
     _ = run("git", "init", "-q", "--bare", "--initial-branch=release", str(bare))
     if remote:
         _ = run("git", "fetch", "-q", remote, "+refs/heads/release/*:refs/heads/release/*", cwd=bare)
+        # index 分支可能还不存在（第一次发布前）：取不到就当作新分支。
+        _ = subprocess.run(["git", "fetch", "-q", remote, "+refs/heads/index:refs/heads/index"], cwd=bare)
     before = release_heads(bare)
+    old_index = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/index"], cwd=bare,
+                               stdout=subprocess.PIPE, text=True).stdout.strip()
     names = plugin_names()
     out = run(sys.executable, str(core / "scripts/pkg_fixture_repo.py"), *names,
               "--repository", str(synth), "--revision", "HEAD", "--output", str(bare))
     rows: list[dict[str, str]] = json.loads(out)
     for row in rows:
         row["old"] = before.get(row["branch"], "")
+    # index 放在最后：推送按计划顺序，release 分支先到位，index 不会指向还没发布的包。
+    rows.append(publish_index(bare, build_index(ROOT, bare), old_index))
     plan.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
