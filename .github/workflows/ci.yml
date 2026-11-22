@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: extra
+          fetch-depth: 0
 
       - name: Read pinned Core version
         id: pin
@@ -45,6 +46,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # 已发布的迁移只能追加：用固定版本 Core 的检查脚本对本仓库跑，不另写一份逻辑。
+      - name: Published migrations are append-only
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python core/scripts/check_yoyo_migrations.py --root extra --base "$BASE_SHA"
 
       - uses: astral-sh/setup-uv@v6
         with:
