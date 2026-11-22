@@ -110,10 +110,18 @@ class VisualTool:
         return None
 
 
+# 插件自己声明的浏览器入口；资源缺失或损坏返回 None，由预检在用到时给出带修复办法的错误。
+def _declared_browser(ctx: Context) -> str | None:
+    try:
+        return str(ctx.runtime.resource("chromium-headless-shell"))
+    except (RuntimeError, AttributeError):  # CompositionError：未声明、缺失或损坏；AttributeError：Core 版本早于资源接口
+        return None
+
+
 async def apply(ctx: Context) -> None:
     """工具依赖附件导入；聊天 UI 可单独出现、卸载和重新出现。"""
     config = Config.model_validate(ctx.config)
-    preview = Preview(config.executable_path)
+    preview = Preview(config.executable_path, declared=lambda: _declared_browser(ctx))
     await ctx.provide(dashboard.SETTINGS, ModelSettings(ctx, Config, ("executable_path",)))
     await ctx.effect(lambda: preview.close, label="visual-preview")
     root = ctx.workspace_root("visuals")
