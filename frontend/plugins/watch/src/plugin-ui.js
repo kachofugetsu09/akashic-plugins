@@ -25,6 +25,9 @@ const briefUsage = (label, total) => !total?.calls ? `${label} 无`
   : `${label} ${total.calls} 次`;
 const allRounds = (data) => data.ticks.flatMap((tick) => tick.rounds.map((round) => ({ ...round, at: tick.at, tick })));
 const allVerdicts = (data) => data.ticks.flatMap((tick) => tick.verdicts.map((item) => ({ ...item, at: tick.at })));
+const verdictCount = (item) => (item.to === "log_summary" ? Number(item.count || 0) : 1);
+const totalVerdicts = (data) => allVerdicts(data).reduce((sum, item) => sum + verdictCount(item), 0);
+const totalQuiet = (data) => allVerdicts(data).reduce((sum, item) => sum + (item.to === "log_summary" ? Number(item.count || 0) : item.to === "log" ? 1 : 0), 0);
 
 function usageList(models) {
   if (!models?.length) return null;
@@ -34,16 +37,14 @@ function usageList(models) {
 
 function summary(data) {
   const said = data.talk.filter((row) => row.kind === "push").length;
-  return `看了 ${allVerdicts(data).length} 件事，叫醒主 Agent ${allRounds(data).length} 次，对你说了 ${said} 句`;
+  return `看了 ${totalVerdicts(data)} 件事，叫醒主 Agent ${allRounds(data).length} 次，对你说了 ${said} 句`;
 }
 
 // 面板顶上的一句话：到你面前的有几句，它动过几处，外面的事有多少只记了一笔。
 function lede(data) {
   const said = data.talk.filter((row) => row.kind === "push").length;
   const did = allRounds(data).reduce((total, round) => total + round.left.filter((item) => item.kind !== "said").length, 0);
-  const verdicts = allVerdicts(data);
-  const quiet = verdicts.filter((item) => item.to === "log").length;
-  return `它对你说了 ${said} 句话，自己动了 ${did} 处。外面来了 ${verdicts.length} 件事，${quiet} 件只记了一笔。`;
+  return `它对你说了 ${said} 句话，自己动了 ${did} 处。外面来了 ${totalVerdicts(data)} 件事，${totalQuiet(data)} 件只记了一笔。`;
 }
 
 function button(className, text, onClick, label) {
@@ -120,18 +121,54 @@ function roundRow(data, round, query) {
   return row;
 }
 
-// 只记了一笔的事不逐条占行：两件要紧事之间的折成一行，点开才列出来。
-function quietRow(items) {
-  const count = new Map();
-  for (const item of items) count.set(item.source, (count.get(item.source) ?? 0) + 1);
-  const names = [...count].sort((a, b) => b[1] - a[1]).map(([source, total]) => `${source} ${total}`).join("、");
-  return h("details", "watch-r watch-r--quiet", null, [
-    h("summary", null, null, [h("time"), h("p", "watch-fold", `${items.length} 件只记了一笔：${names}`)]),
-    h("div", "watch-more", null, items.map((item) => {
-      const line = h("div", null, null, [h("time", null, item.at), h("span", null, item.source), h("span", null, item.title)]);
-      line.title = item.why || "值班员没有写理由";
-      return line;
-    }))]);
+function quietLine(item) {
+  const line = h("div", null, null, [h("time", null, item.at), h("span", null, item.source), h("span", null, item.title)]);
+  line.title = item.why || "值班员没有写理由";
+  return line;
+}
+
+// 只记了一笔的事不逐条占行：两件要紧事之间的折成一行，点开才按需拉取明细。
+function quietRow(group, date, query) {
+  const names = [...group.counts].sort((a, b) => b[1] - a[1]).map(([source, total]) => `${source} ${total}`).join("、");
+  const body = h("div", "watch-more", null, group.items.length
+    ? group.items.map(quietLine)
+    : [h("p", "watch-why", "点开后读取明细…")]);
+  const details = h("details", "watch-r watch-r--quiet", null, [
+    h("summary", null, null, [h("time"), h("p", "watch-fold", `${group.total} 件只记了一笔：${names}`)]),
+    body,
+  ]);
+  if (!group.items.length && group.fromSeq != null) {
+    let loaded = false;
+    const loadPage = async (offset, replace) => {
+      try {
+        const res = await query("log_verdicts", { date, start: group.fromSeq, end: group.toSeq, offset, limit: 200 }, { cache: "memory" });
+        const lines = (res?.items ?? []).map(quietLine);
+        const more = res?.next_offset != null
+          ? button("watch-more", `继续加载（剩余 ${(res.total ?? group.total) - res.next_offset} 条）`, () => {
+              more.disabled = true;
+              more.textContent = "正在读取…";
+              void loadPage(res.next_offset, false).finally(() => more.remove());
+            })
+          : null;
+        if (replace) body.replaceChildren(...lines, ...(more ? [more] : []));
+        else {
+          body.append(...lines);
+          if (more) body.append(more);
+        }
+        if (replace && !lines.length) body.replaceChildren(h("p", "watch-why", "这一段没有可展示的记录"));
+      } catch (error) {
+        body.replaceChildren(h("p", "watch-why", `读取失败：${error instanceof Error ? error.message : error}`));
+      }
+    };
+    details.addEventListener("toggle", () => {
+      if (details.open && !loaded) {
+        loaded = true;
+        body.replaceChildren(h("p", "watch-why", "正在读取…"));
+        void loadPage(0, true);
+      }
+    });
+  }
+  return details;
 }
 
 // 这一天的流水，新的在上：接下来要回来的时刻、你们的对话、后台回合、要紧的事件、各来源报告的状态变化。
@@ -149,17 +186,37 @@ function ledgerView(data, query) {
     if (segment.at !== "00:00") rows.push({ at: segment.at, rank: 0, node: h("div", "watch-mark", null, [h("time", null, segment.at),
       h("span", null, segment.text, [h("small", null, lane.source)])]) });
   }
-  let quiet = [];
-  const flush = (at) => { if (quiet.length) rows.push({ at, rank: 1, node: quietRow(quiet.reverse()) }); quiet = []; };
+  const makeQuiet = () => ({ total: 0, counts: new Map(), fromSeq: null, toSeq: null, items: [], lastAt: null });
+  let quiet = makeQuiet();
+  const flush = () => {
+    if (quiet.total) rows.push({ at: quiet.lastAt, rank: 1, node: quietRow({ ...quiet, items: quiet.items.slice().reverse() }, data.date, query) });
+    quiet = makeQuiet();
+  };
   for (const item of allVerdicts(data)) {
-    if (item.to === "log") { quiet.push(item); continue; }
-    flush(quiet.at(-1)?.at);
+    if (item.to === "log_summary") {
+      quiet.total += Number(item.count || 0);
+      for (const [src, cnt] of Object.entries(item.sources ?? {})) {
+        quiet.counts.set(src, (quiet.counts.get(src) ?? 0) + Number(cnt || 0));
+      }
+      if (quiet.fromSeq == null && item.from_seq != null) quiet.fromSeq = item.from_seq;
+      if (item.to_seq != null) quiet.toSeq = item.to_seq;
+      quiet.lastAt = item.at;
+      continue;
+    }
+    if (item.to === "log") {
+      quiet.total += 1;
+      quiet.counts.set(item.source, (quiet.counts.get(item.source) ?? 0) + 1);
+      quiet.items.push(item);
+      quiet.lastAt = item.at;
+      continue;
+    }
+    flush();
     const row = h("details", "watch-r", null, [h("summary", null, null, [h("time", null, item.at),
       h("p", null, null, [h("span", "watch-who", item.source), document.createTextNode(item.title)]),
       h("span", `watch-to watch-to--${item.to}`, item.to === "wake" ? "叫醒了它" : "进了待看")]), h("p", "watch-sub watch-why", item.why || "值班员没有写理由")]);
     rows.push({ at: item.at, rank: 1, node: row });
   }
-  flush(quiet.at(-1)?.at);
+  flush();
   rows.sort((a, b) => b.at.localeCompare(a.at) || b.rank - a.rank);
   const today = data.date === data.today;
   const next = today ? orders(data.files["WATCH.md"]).wake.filter((item) => item.at?.startsWith(data.date) && item.at.slice(11) > data.now)
@@ -277,9 +334,8 @@ const panel = {
   label: "值班",
   iconSvg: ICON,
   async status({ query }) {
-    const data = await query("day", {}, { cache: "none" });
-    const said = data.talk.filter((row) => row.kind === "push").length;
-    return data.ticks.length ? { text: `今天说了 ${said} 句` } : null;
+    const data = await query("status", {}, { cache: "none" });
+    return data?.has_ticks ? { text: `今天说了 ${data.said ?? 0} 句` } : null;
   },
   mount,
 };
