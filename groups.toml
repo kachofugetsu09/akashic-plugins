@@ -1,15 +1,9 @@
 # 包组：给终端选装和 `pkg install @组` 用的分类，只是元数据，不决定任何实例装什么。
 # 成员写插件 manifest 名（即 release/<名> 分支名，例如 opencode-go，不是目录名 opencode_go）。
 # 每个插件必须恰好属于一个组：新增插件忘了归组，CI 的 index 步骤会报错。
-# required = true 的组是宿主前端硬依赖，选装时不可取消。
+# required = true 的组选装时不可取消（目前没有：宿主前端硬依赖的能力都在 Core 里）。
 # 包间硬依赖（requires）不在这里写：CI 从插件源码的 import 自动算出。
 # [packages.<名>] 声明装上后要用到的外部前置条件：docker、command:<命令名>；不满足的包照装但保持关闭。
-
-[groups.base]
-title = "对话基础"
-description = "聊天输入框引用会话所需，没有它带引用的消息会被拒收"
-required = true
-members = ["session_reference"]
 
 [groups.chat]
 title = "对话体验"
