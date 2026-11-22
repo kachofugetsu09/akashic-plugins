@@ -1,6 +1,6 @@
 # akashic-plugins
 
-Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件构建成完整的插件根，推到 `release/<插件名>` 分支；Core 的 `akashic pkg` 从这些分支安装和升级。目前 29 个插件（从 Core 迁出的 28 个加 `privacy_mask`）都在这里。
+Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件构建成完整的插件根，推到 `release/<插件名>` 分支；Core 的 `akashic pkg` 从这些分支安装和升级。目前 32 个插件都在这里。
 
 ## 分支约定
 
@@ -22,6 +22,12 @@ PR 与 main 都会：检出固定版本 Core，把本仓库的 `plugins/`、`fro
 ## 迁移只能追加
 
 带数据库迁移的插件（目前只有 `scheduler`：`migration.catalog.toml` 与 `scheduler_migrations/`）一旦发布，已有的迁移源码和 catalog 里已登记的条目就不能改或删，只能追加。PR 上用固定版本 Core 的 `scripts/check_yoyo_migrations.py --root . --base <main>` 检查；本地同样可跑。
+
+## 包组与 index 分支
+
+`groups.toml` 把插件归成组（标题、说明、成员、是否必需）并声明外部前置条件（`docker`、`command:<命令>`），供 Core 的终端选装与 `pkg install @组` 使用；它不决定任何实例装什么。每个插件必须恰好属于一个组，新增插件忘了归组，构建会失败。包间依赖不用写：构建时从插件源码里对另一个 extra 插件的 import 自动算出。
+
+`index` 分支（与 `release/*` 同一套规则：无父提交、固定作者和时间，内容不变则提交不变）只有一个 `index.json`：组、说明、每包大小（`release/<名>` 树里文件字节数之和）、包间依赖、前置条件、镜像。不含版本，版本仍只看 `release/<名>`。本地验证：对已有 release 分支的裸仓库运行 `python scripts/extra_ci.py build ...` 会一并生成并报告 `index` 行。
 
 ## 本地构建与验证
 

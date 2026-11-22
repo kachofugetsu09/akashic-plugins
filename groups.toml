@@ -1,0 +1,81 @@
+# 包组：给终端选装和 `pkg install @组` 用的分类，只是元数据，不决定任何实例装什么。
+# 成员写插件 manifest 名（即 release/<名> 分支名，例如 opencode-go，不是目录名 opencode_go）。
+# 每个插件必须恰好属于一个组：新增插件忘了归组，CI 的 index 步骤会报错。
+# required = true 的组是宿主前端硬依赖，选装时不可取消。
+# 包间硬依赖（requires）不在这里写：CI 从插件源码的 import 自动算出。
+# [packages.<名>] 声明装上后要用到的外部前置条件：docker、command:<命令名>；不满足的包照装但保持关闭。
+
+[groups.base]
+title = "对话基础"
+description = "聊天输入框引用会话所需，没有它带引用的消息会被拒收"
+required = true
+members = ["session_reference"]
+
+[groups.chat]
+title = "对话体验"
+description = "自动命名会话、侧栏主对话入口、项目分组、隐私打码"
+members = ["session_title", "main_session", "projects", "privacy_mask"]
+
+[groups.workbench]
+title = "工作台"
+description = "改动摘要、Markdown 阅读、终端"
+members = ["workspace_changes", "markdown_reader", "terminal"]
+
+[groups.web]
+title = "联网"
+description = "让它能搜索和读取网页"
+members = ["standard_web", "web_fetch_http", "web_search_exa", "web_search_searxng"]
+
+[groups.delegate]
+title = "子任务"
+description = "把任务委派给子智能体、Codex 或 Claude Code"
+members = ["subagent", "subagent_codex", "subagent_claude_code"]
+
+[groups.schedule]
+title = "定时与提醒"
+description = "定时任务、提醒、主动推送"
+members = ["timer", "scheduler", "message_push"]
+
+[groups.goal]
+title = "目标"
+description = "为长任务设定目标并持续推进"
+members = ["goal"]
+
+[groups.watch]
+title = "值班"
+description = "主动关注并在需要时提醒你"
+members = ["watch", "userinformation"]
+
+[groups.memory]
+title = "记忆"
+description = "Markdown 记忆"
+members = ["markdown_memory"]
+
+[groups.senses]
+title = "看图与浏览器"
+description = "读取图片、使用浏览器"
+members = ["vision", "computer"]
+
+[groups.models]
+title = "更多模型来源"
+description = "Codex、Gemini、OpenCode Go 的模型连接"
+members = ["codex", "gemini", "opencode-go"]
+
+[groups.channels]
+title = "通道"
+description = "Telegram 收发"
+members = ["telegram_sender", "telegram_channel"]
+
+[groups.advanced]
+title = "开发者"
+description = "设计画布、可视化、稳定视图"
+members = ["design", "visuals", "stable_view"]
+
+[packages.computer]
+needs = ["docker"]
+
+[packages.subagent_codex]
+needs = ["command:codex"]
+
+[packages.subagent_claude_code]
+needs = ["command:claude"]
