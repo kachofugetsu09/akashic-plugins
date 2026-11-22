@@ -1,0 +1,3 @@
+# In-process dependencies. Lower bound: Core requirements.txt; upper bound: next major (html2text uses calendar versions).
+html2text>=2025.4.0
+lxml>=6.0.0,<7
