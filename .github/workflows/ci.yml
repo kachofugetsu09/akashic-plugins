@@ -80,6 +80,10 @@ jobs:
         working-directory: synth
         run: python scripts/plugin_boundary.py check
 
+      # 插件自带的 wheel 必须等于"从锁定 sha256 的 sdist 用固定构建环境重建"的结果。
+      - name: Check bundled wheels
+        run: python extra/scripts/bundled_wheels.py check --lock extra/wheels.lock.json
+
       # 进程内依赖声明：普通包要求、与固定版本 Core 的锁兼容、声明的包确实被导入。
       - name: Check in-process dependency declarations
         working-directory: synth
