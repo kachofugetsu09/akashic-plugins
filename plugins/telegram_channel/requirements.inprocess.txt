@@ -1,0 +1,5 @@
+# 主进程里直接 import 的第三方包（Core 自带的同名包优先；Core 删掉依赖后这里是唯一来源）。
+# 下界取 Core 的 requirements.txt，上界是下一个主版本：与 Core 锁兼容，Core 在同一主版本内升级也不会让安装被拒。
+aiohttp>=3.14.3,<4
+python-telegram-bot>=22.7,<23
+telegramify-markdown>=1.2.0,<2
