@@ -1,6 +1,6 @@
 # akashic-plugins
 
-Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件构建成完整的插件根，推到 `release/<插件名>` 分支；Core 的 `akashic pkg` 从这些分支安装和升级。目前 32 个插件都在这里。
+Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件构建成完整的插件根，推到 `release/<插件名>` 分支；Core 的 `akashic pkg` 从这些分支安装和升级。目前 31 个插件都在这里。
 
 ## 分支约定
 
