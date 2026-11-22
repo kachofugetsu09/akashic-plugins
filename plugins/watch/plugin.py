@@ -113,15 +113,28 @@ async def apply(ctx: Context) -> None:
         async def query(method: str, payload: dict[str, object], *, session_id: str | None, turn_id: str | None) -> dict[str, object]:
             now = datetime.now(runtime.zone)
             catalog = ctx.require(MESSAGE_CATALOG)
+            if method == "status":
+                reader = catalog.reader(config.target) if config.target else None
+                return await run_file_io(lambda: panel.read_status(runtime.root, now.date(), reader, now))
             if method == "round":
                 reader = catalog.reader(panel.parse_session(payload))
                 steps, usage = await run_file_io(lambda: panel.read_round_detail(reader, tool_name, call_stats))
                 return {"steps": steps, "usage": usage}
+            if method == "log_verdicts":
+                day = panel.parse_day(payload, now.date())
+                start = panel.parse_int_arg(payload, "start", default=None, minimum=0)
+                end = panel.parse_int_arg(payload, "end", default=None, minimum=0)
+                offset = panel.parse_int_arg(payload, "offset", default=0, minimum=0) or 0
+                limit = panel.parse_int_arg(payload, "limit", default=200, minimum=1, maximum=200) or 200
+                return await run_file_io(
+                    lambda: panel.read_log_verdicts(runtime.root, day, start=start, end=end, offset=offset, limit=limit)
+                )
             if method != "day":
                 raise PluginUiRpcInvalidRequest(f"不支持的查询：{method}")
             day = panel.parse_day(payload, now.date())
             talk = await run_file_io(lambda: panel.read_talk(catalog.reader(config.target), day, now)) if config.target else []
             ticks, usage = await run_file_io(lambda: panel.read_day_usage(runtime.root, day, catalog.reader, call_stats))
+            ticks = panel.compact_ticks_for_day(ticks)
             lanes = await run_file_io(lambda: panel.read_lanes(runtime.root, day))
             files = {name: runtime.files.text(f"watch/{name}") or "" for name in ("WATCH.md", "notes.md", "inbox.md")}
             return {"date": day.isoformat(), "today": now.date().isoformat(), "now": f"{now:%H:%M}", "interval": config.interval_minutes,

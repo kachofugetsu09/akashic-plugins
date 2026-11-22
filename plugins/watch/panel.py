@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 from plugins.ledger.contract import ContentPart, Message, MessageReader, Output, ToolCall, ToolResult
 from plugins.models.contract import ModelCallStats
@@ -297,3 +298,140 @@ def parse_session(payload: Mapping[str, object]) -> str:
     if not session.startswith("programmatic:watch-"):
         raise PluginUiRpcInvalidRequest("只能读取值班自己的后台会话")
     return session
+
+
+def has_day_ticks(root: Path, day: date) -> bool:
+    path = root / "log" / f"{day:%Y-%m-%d}.md"
+    if not path.exists():
+        return False
+    for text in path.read_text(encoding="utf-8").splitlines():
+        if (
+            _VERDICT.match(text)
+            or _ROUND.match(text)
+            or _MEMORY.match(text)
+            or _FAILURE.match(text)
+            or _WATCHER_USAGE.match(text)
+        ):
+            return True
+    return False
+
+
+def read_status(root: Path, day: date, reader: MessageReader | None, now: datetime) -> dict[str, object]:
+    if not has_day_ticks(root, day):
+        return {"has_ticks": False, "said": 0}
+    talk = read_talk(reader, day, now) if reader is not None else []
+    said = sum(1 for row in talk if row.get("kind") == "push")
+    return {"has_ticks": True, "said": said}
+
+
+def compact_ticks_for_day(ticks: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    log_seq = 0
+    for tick in ticks:
+        raw_verdicts = tick.get("verdicts")
+        verdicts = raw_verdicts if isinstance(raw_verdicts, list) else []
+        compacted: list[dict[str, object]] = []
+        run_count = 0
+        run_start = log_seq
+        run_sources: dict[str, int] = {}
+
+        def flush_run() -> None:
+            nonlocal run_count, run_start, run_sources
+            if not run_count:
+                return
+            compacted.append({
+                "to": "log_summary",
+                "count": run_count,
+                "sources": dict(run_sources),
+                "from_seq": run_start,
+                "to_seq": log_seq,
+            })
+            run_count = 0
+            run_sources = {}
+
+        for item in verdicts:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("to") == "log":
+                if not run_count:
+                    run_start = log_seq
+                src = str(item.get("source") or "unknown")
+                run_sources[src] = run_sources.get(src, 0) + 1
+                run_count += 1
+                log_seq += 1
+            else:
+                flush_run()
+                compacted.append(dict(item))
+        flush_run()
+        copied = dict(tick)
+        copied["verdicts"] = compacted
+        out.append(copied)
+    return out
+
+
+def read_log_verdicts(
+    root: Path,
+    day: date,
+    *,
+    start: int | None = None,
+    end: int | None = None,
+    offset: int = 0,
+    limit: int = 200,
+    max_bytes: int = 128 * 1024,
+) -> dict[str, object]:
+    path = root / "log" / f"{day:%Y-%m-%d}.md"
+    logs: list[dict[str, str]] = []
+    for text in path.read_text(encoding="utf-8").splitlines() if path.exists() else ():
+        match = _VERDICT.match(text)
+        if not match:
+            continue
+        at, event_id, source, title, to, why = match.groups()
+        if to == "log":
+            logs.append({"at": at, "id": event_id, "source": source, "title": title, "why": why or ""})
+
+    total_logs = len(logs)
+    lo = 0 if start is None else max(0, min(start, total_logs))
+    hi = total_logs if end is None else max(lo, min(end, total_logs))
+    selected = list(reversed(logs[lo:hi]))
+    total = len(selected)
+    off = max(0, min(offset, total))
+    lim = max(1, min(limit, 200))
+
+    items: list[dict[str, str]] = []
+    used_bytes = 64
+    for row in selected[off:off + lim]:
+        encoded_len = len(json.dumps(row, ensure_ascii=False).encode("utf-8")) + 2
+        if items and used_bytes + encoded_len > max_bytes:
+            break
+        if encoded_len > max_bytes:
+            row = {**row, "title": clip(row["title"], 240), "why": clip(row["why"], 240)}
+            encoded_len = len(json.dumps(row, ensure_ascii=False).encode("utf-8")) + 2
+        items.append(row)
+        used_bytes += encoded_len
+
+    next_offset = off + len(items)
+    return {
+        "items": items,
+        "total": total,
+        "offset": off,
+        "next_offset": next_offset if next_offset < total else None,
+    }
+
+
+def parse_int_arg(
+    payload: Mapping[str, object],
+    key: str,
+    *,
+    default: int | None = None,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int | None:
+    raw = payload.get(key)
+    if raw is None:
+        return default
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise PluginUiRpcInvalidRequest(f"{key} 必须是整数")
+    value = cast(int, raw)
+    if value < minimum or (maximum is not None and value > maximum):
+        raise PluginUiRpcInvalidRequest(f"{key} 超出允许范围")
+    return value
