@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from playwright.async_api import Browser, BrowserContext, Error, Playwright, async_playwright
 
 
@@ -17,13 +18,23 @@ class PreviewFailed(ValueError):
     """调用者可修正文档或浏览器配置后重试。"""
 
 
+# 把 Playwright 的启动失败整理成一行原因加可操作的修复办法（原始提示里的"playwright install"对发行镜像是误导）。
+def launch_failure(error: Error, executable_path: str | None) -> str:
+    reason = next((line.strip() for line in str(error).splitlines()
+                   if line.strip() and not line.lstrip().startswith(("\u2554", "\u2551", "\u255a"))), "未知原因")
+    where = executable_path or f"PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or '(默认缓存)'}"
+    return (f"找不到或无法启动 Chromium（{where}）：{reason}。发行镜像自带浏览器；自行部署时请设置环境变量 "
+            "AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径，或运行 `python -m playwright install chromium`。")
+
+
 class PreviewUnavailable(RuntimeError):
     """操作者需要修复浏览器环境，修改生成内容无法恢复。"""
 
 
 class Preview:
     def __init__(self, executable_path: str | None = None) -> None:
-        self._executable_path = executable_path
+        # 设置里填的路径优先，其次环境变量 AKASHIC_BROWSER_EXECUTABLE，都没有就用 Playwright 自带的浏览器。
+        self._executable_path = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._lock = asyncio.Lock()
@@ -53,7 +64,7 @@ class Preview:
                 )
             except Error as error:
                 await self.close()
-                raise PreviewUnavailable(f"浏览器环境不可用，需要操作者修复；请勿通过改写 HTML 重试：{error}") from error
+                raise PreviewUnavailable(f"浏览器环境不可用，需要操作者修复；请勿通过改写 HTML 重试：{launch_failure(error, self._executable_path)}") from error
             except asyncio.CancelledError:
                 await self.close()
                 raise

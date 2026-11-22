@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+import os
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -20,6 +21,16 @@ from playwright.async_api import Browser, BrowserContext, Error, Page, Playwrigh
 logger = logging.getLogger(__name__)
 
 IDLE_CHECK_SECONDS = 30.0
+
+
+
+# 把 Playwright 的启动失败整理成一行原因加可操作的修复办法（原始提示里的"playwright install"对发行镜像是误导）。
+def launch_failure(error: Error, executable_path: str | None) -> str:
+    reason = next((line.strip() for line in str(error).splitlines()
+                   if line.strip() and not line.lstrip().startswith(("\u2554", "\u2551", "\u255a"))), "未知原因")
+    where = executable_path or f"PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or '(默认缓存)'}"
+    return (f"找不到或无法启动 Chromium（{where}）：{reason}。发行镜像自带浏览器；自行部署时请设置环境变量 "
+            "AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径，或运行 `python -m playwright install chromium`。")
 
 
 class HeadlessUnavailable(RuntimeError):
@@ -63,7 +74,8 @@ class HeadlessPages:
 
     def __init__(self, *, idle_seconds: float = 600.0, executable_path: str | None = None) -> None:
         self._idle = idle_seconds
-        self._executable_path = executable_path
+        # 参数优先，其次环境变量 AKASHIC_BROWSER_EXECUTABLE，都没有就用 Playwright 自带的浏览器。
+        self._executable_path = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._pages: dict[str, _Open] = {}
@@ -160,7 +172,7 @@ class HeadlessPages:
                 args=["--site-per-process", "--enable-features=IsolateSandboxedIframes"])
         except Error as error:
             await self._stop_browser()
-            raise HeadlessUnavailable(f"无头浏览器不可用：{error}") from error
+            raise HeadlessUnavailable(f"无头浏览器不可用：{launch_failure(error, self._executable_path)}") from error
         return self._browser
 
     # 闲置超时的页面关掉；一块都不剩时连浏览器一起退出，下次用到再起。
