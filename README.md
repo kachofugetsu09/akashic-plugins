@@ -15,6 +15,10 @@ Akashic 官方 extra 插件仓库。`main` 放插件源码，CI 把每个插件�
 
 PR 与 main 都会：检出固定版本 Core，把本仓库的 `plugins/`、`frontend/plugins/`、`tests/` 覆盖到 Core 同名位置合成一份源码，然后跑插件边界门禁、ruff、pyright、前端类型与样式合同，并构建全部插件的前端和 release 分支；PR 上还会检查已发布的迁移只能追加（见下）。main 上构建通过后，只推 tree 有变化的分支；同一时间只有一个发布在跑，且只发布 main 当前的最新提交。发布作业偶发被 GitHub 拒绝推送时，直接重跑该次运行即可（构建是确定的，重跑得到同样的提交）。
 
+## 进程内依赖
+
+插件在主进程里直接 import 的第三方包写进插件根的 `requirements.inprocess.txt`（普通 PEP 508 要求，非空才算）。装进插件自己的环境，其 site-packages 追加到 `sys.path` 末尾，Core 自带的同名包永远优先；安装时按 Core 锁和其他已装插件的版本作约束，冲突在改状态前失败。写法：下界取 Core 的 `requirements.txt`，上界取下一个主版本（如 `aiohttp>=3.14.3,<4`），不钉死版本，这样 Core 在同一主版本内升级不会让安装被拒。两个插件的声明文件逐字节相同时共用一个环境。PR 上由 `scripts/check_inprocess.py` 检查：只含普通包要求、与 Core 锁兼容、声明的包确实被导入。
+
 ## 迁移只能追加
 
 带数据库迁移的插件（目前只有 `scheduler`：`migration.catalog.toml` 与 `scheduler_migrations/`）一旦发布，已有的迁移源码和 catalog 里已登记的条目就不能改或删，只能追加。PR 上用固定版本 Core 的 `scripts/check_yoyo_migrations.py --root . --base <main>` 检查；本地同样可跑。

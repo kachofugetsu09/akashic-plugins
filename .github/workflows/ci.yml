@@ -80,6 +80,11 @@ jobs:
         working-directory: synth
         run: python scripts/plugin_boundary.py check
 
+      # 进程内依赖声明：普通包要求、与固定版本 Core 的锁兼容、声明的包确实被导入。
+      - name: Check in-process dependency declarations
+        working-directory: synth
+        run: python ../extra/scripts/check_inprocess.py docker/host-runtime/requirements.lock ../extra/plugins
+
       - name: Lint and type check Python
         working-directory: synth
         run: |
