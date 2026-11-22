@@ -1,0 +1,1 @@
+{"schema_version": 1, "resources": [{"name": "chromium-headless-shell", "url": "https://cdn.playwright.dev/builds/cft/147.0.7727.15/linux64/chrome-headless-shell-linux64.zip", "sha256": "cf779cd5486f3fc5a18bea4ac606026a1667ae16efaee15af51bd3ad3ae01092", "archive": "zip", "entry": "chrome-headless-shell-linux64/chrome-headless-shell", "size": 117394312}]}

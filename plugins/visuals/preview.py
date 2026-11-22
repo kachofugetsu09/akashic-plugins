@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from playwright.async_api import Browser, BrowserContext, Error, Playwright, async_playwright
 
 
@@ -23,8 +24,8 @@ def launch_failure(error: Error, executable_path: str | None) -> str:
     reason = next((line.strip() for line in str(error).splitlines()
                    if line.strip() and not line.lstrip().startswith(("\u2554", "\u2551", "\u255a"))), "未知原因")
     where = executable_path or f"PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or '(默认缓存)'}"
-    return (f"找不到或无法启动 Chromium（{where}）：{reason}。发行镜像自带浏览器；自行部署时请设置环境变量 "
-            "AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径，或运行 `python -m playwright install chromium`。")
+    return (f"找不到或无法启动 Chromium（{where}）：{reason}。插件随安装取回自己声明的浏览器（resources.json）；"
+            "资源缺失时请重新安装或升级本插件，自行部署时也可以设置环境变量 AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径。")
 
 
 class PreviewUnavailable(RuntimeError):
@@ -32,9 +33,12 @@ class PreviewUnavailable(RuntimeError):
 
 
 class Preview:
-    def __init__(self, executable_path: str | None = None) -> None:
-        # 设置里填的路径优先，其次环境变量 AKASHIC_BROWSER_EXECUTABLE，都没有就用 Playwright 自带的浏览器。
-        self._executable_path = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
+    def __init__(self, executable_path: str | None = None, declared: Callable[[], str | None] = lambda: None) -> None:
+        # 优先级：设置项 > 环境变量 AKASHIC_BROWSER_EXECUTABLE > 本插件 resources.json 声明的浏览器 > Playwright 自带的浏览器。
+        # declared 在每次启动浏览器时才求值：资源缺失只影响用到浏览器的功能，插件照常加载。
+        self._explicit = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
+        self._declared = declared
+        self._executable_path: str | None = None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._lock = asyncio.Lock()
@@ -57,6 +61,7 @@ class Preview:
             if self._browser is not None and self._browser.is_connected():
                 return self._browser
             await self.close()
+            self._executable_path = self._explicit or self._declared()
             self._playwright = await async_playwright().start()
             try:
                 self._browser = await self._playwright.chromium.launch(

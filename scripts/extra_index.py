@@ -60,6 +60,16 @@ def tree_size(bare: Path, name: str) -> int:
     return sum(int(line.split(None, 4)[3]) for line in out.splitlines() if line.split(None, 4)[3] != "-")
 
 
+# 插件声明的资源归档（resources.json）：sha256 -> 字节数。安装时另行下载，不在 release 分支里；
+# 按 sha256 列出，客户端汇总总大小时可按 sha256 去重（多个包共用同一份浏览器只下载一次）。
+def resource_sizes(root: Path, name: str) -> dict[str, int]:
+    path = root / "plugins" / name / "resources.json"
+    if not path.is_file():
+        return {}
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return {str(item["sha256"]): int(item.get("size", 0)) for item in document.get("resources", [])}
+
+
 # 校验 groups.toml 与插件目录一致；返回全部问题（空表示通过）。
 def validate(groups: dict[str, dict[str, object]], packages: dict[str, dict[str, object]], plugins: dict[str, PluginInfo]) -> list[str]:
     problems: list[str] = []
@@ -116,7 +126,7 @@ def build_index(root: Path, bare: Path) -> str:
                    for group_id, group in groups.items()},
         "packages": {name: {"desc": info.desc, "group": group_of[name], "requires": requires[name],
                             "needs": sorted(packages.get(name, {}).get("needs", [])), "images": list(info.images),
-                            "size_bytes": tree_size(bare, name)}
+                            "size_bytes": tree_size(bare, name), "resources": resource_sizes(root, name)}
                      for name, info in plugins.items()},
     }
     return json.dumps(index, ensure_ascii=False, indent=1, sort_keys=True) + "\n"

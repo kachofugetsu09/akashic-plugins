@@ -1,6 +1,6 @@
 """在无头 Chromium 里托管一份静态网页产物：资源从本地目录取，指定前缀交给 Python，只放行指定外部来源；闲置的页面自动关闭。
 
-设计插件用它在服务端跑编辑器（不依赖用户开着网页）；浏览器用部署里已有的 Playwright Chromium。接口里没有设计专属的概念，
+设计插件用它在服务端跑编辑器（不依赖用户开着网页）；浏览器来自本插件 resources.json 声明的资源（安装时取回）。接口里没有设计专属的概念，
 别的插件也要在服务端跑自己的前端代码时，把它提成公共能力（新增 Core 公开模块要过插件边界评审）。
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ def launch_failure(error: Error, executable_path: str | None) -> str:
     reason = next((line.strip() for line in str(error).splitlines()
                    if line.strip() and not line.lstrip().startswith(("\u2554", "\u2551", "\u255a"))), "未知原因")
     where = executable_path or f"PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or '(默认缓存)'}"
-    return (f"找不到或无法启动 Chromium（{where}）：{reason}。发行镜像自带浏览器；自行部署时请设置环境变量 "
-            "AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径，或运行 `python -m playwright install chromium`。")
+    return (f"找不到或无法启动 Chromium（{where}）：{reason}。插件随安装取回自己声明的浏览器（resources.json）；"
+            "资源缺失时请重新安装或升级本插件，自行部署时也可以设置环境变量 AKASHIC_BROWSER_EXECUTABLE 为 Chrome/Chromium 的绝对路径。")
 
 
 class HeadlessUnavailable(RuntimeError):
@@ -72,10 +72,16 @@ class _Open:
 class HeadlessPages:
     """按 key 复用页面：同一个 key 拿到的是同一块页面（状态留在页面里），各 key 之间不共享存储与缓存。"""
 
-    def __init__(self, *, idle_seconds: float = 600.0, executable_path: str | None = None) -> None:
+    def __init__(
+        self, *, idle_seconds: float = 600.0, executable_path: str | None = None,
+        declared: Callable[[], str | None] = lambda: None,
+    ) -> None:
         self._idle = idle_seconds
-        # 参数优先，其次环境变量 AKASHIC_BROWSER_EXECUTABLE，都没有就用 Playwright 自带的浏览器。
-        self._executable_path = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
+        # 优先级：参数 > 环境变量 AKASHIC_BROWSER_EXECUTABLE > 本插件 resources.json 声明的浏览器 > Playwright 自带的浏览器。
+        # declared 在每次启动浏览器时才求值，资源缺失只影响用到浏览器的功能。
+        self._explicit = executable_path or os.environ.get("AKASHIC_BROWSER_EXECUTABLE") or None
+        self._declared = declared
+        self._executable_path: str | None = None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._pages: dict[str, _Open] = {}
@@ -164,6 +170,7 @@ class HeadlessPages:
         if self._browser is not None and self._browser.is_connected():
             return self._browser
         await self._stop_browser()
+        self._executable_path = self._explicit or self._declared()
         try:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(

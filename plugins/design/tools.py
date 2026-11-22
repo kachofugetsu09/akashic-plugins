@@ -177,9 +177,17 @@ class HtmlTool(DesignTool):
         return entry
 
 
+# 插件自己声明的浏览器入口；资源缺失或损坏返回 None，启动浏览器时由 Playwright 给出带路径的错误。
+def _declared_browser(ctx: Context) -> str | None:
+    try:
+        return str(ctx.runtime.resource("chromium-headless-shell"))
+    except (RuntimeError, AttributeError):  # CompositionError：未声明、缺失或损坏；AttributeError：Core 版本早于资源接口
+        return None
+
+
 async def register_tools(ctx: Context) -> None:
     store = ctx.require(DESIGN_STORE)
-    worker = DesignWorker(store, ctx.require(DESIGN_LIVE), HeadlessPages(), ctx.runtime.plugin_dir, ctx.runtime.data_dir)
+    worker = DesignWorker(store, ctx.require(DESIGN_LIVE), HeadlessPages(declared=lambda: _declared_browser(ctx)), ctx.runtime.plugin_dir, ctx.runtime.data_dir)
     _ = await ctx.effect(lambda: worker.aclose, label="design-worker")
     catalog = ctx.require(TOOLS)
     _ = await catalog.declare_group(ctx, description=GROUP, icon="pen-tool")
