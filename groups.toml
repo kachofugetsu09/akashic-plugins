@@ -48,8 +48,8 @@ members = ["watch", "userinformation"]
 
 [groups.memory]
 title = "记忆"
-description = "Markdown 记忆"
-members = ["markdown_memory"]
+description = "Markdown 记忆与 Akasha 语义记忆"
+members = ["markdown_memory", "akasha"]
 
 [groups.senses]
 title = "看图与浏览器"

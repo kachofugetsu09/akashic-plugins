@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "wheels": [
+    {
+      "plugin": "akasha",
+      "name": "jieba",
+      "version": "0.42.1",
+      "sdist_url": "https://files.pythonhosted.org/packages/source/j/jieba/jieba-0.42.1.tar.gz",
+      "sdist_sha256": "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2",
+      "source_date_epoch": 315532800,
+      "build_requires": ["setuptools==75.8.0", "wheel==0.45.1"],
+      "wheel": "jieba-0.42.1-py3-none-any.whl",
+      "wheel_sha256": "de66022f2c442973630f362423231712d17a1ac6cbec89eda83c256a3077ba38"
+    }
+  ]
+}
