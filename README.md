@@ -19,6 +19,10 @@ PR 与 main 都会：检出固定版本 Core，把本仓库的 `plugins/`、`fro
 
 插件在主进程里直接 import 的第三方包写进插件根的 `requirements.inprocess.txt`（普通 PEP 508 要求，非空才算）。装进插件自己的环境，其 site-packages 追加到 `sys.path` 末尾，Core 自带的同名包永远优先；安装时按 Core 锁和其他已装插件的版本作约束，冲突在改状态前失败。写法：下界取 Core 的 `requirements.txt`，上界取下一个主版本（如 `aiohttp>=3.14.3,<4`），不钉死版本，这样 Core 在同一主版本内升级不会让安装被拒。两个插件的声明文件逐字节相同时共用一个环境。PR 上由 `scripts/check_inprocess.py` 检查：只含普通包要求、与 Core 锁兼容、声明的包确实被导入。
 
+## 自带 wheel
+
+只有 sdist 的纯 Python 依赖（目前是 `akasha` 的 `jieba==0.42.1`）把 `*-py3-none-any.whl` 放在插件根的 `wheels/` 目录，Core 求 wheel 与在线安装时把它当作 `--find-links`（仍只收 wheel、仍过 Core 锁的约束）。wheel 直接提交进仓库；`wheels.lock.json` 记录 sdist 的 URL 与 sha256、固定的 `SOURCE_DATE_EPOCH` 与构建后端版本、wheel 的 sha256。`python scripts/bundled_wheels.py check` 从 sdist 重建并要求与已提交的 wheel 逐字节一致（CI 里会跑）；`build` 重新生成。许可证写在插件的 `THIRD_PARTY_NOTICES.md`。
+
 ## 迁移只能追加
 
 带数据库迁移的插件（目前只有 `scheduler`：`migration.catalog.toml` 与 `scheduler_migrations/`）一旦发布，已有的迁移源码和 catalog 里已登记的条目就不能改或删，只能追加。PR 上用固定版本 Core 的 `scripts/check_yoyo_migrations.py --root . --base <main>` 检查；本地同样可跑。
