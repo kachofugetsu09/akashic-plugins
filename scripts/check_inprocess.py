@@ -40,7 +40,10 @@ def imported_modules(plugin: Path) -> set[str]:
 def check_plugin(plugin: Path, pins: dict[str, Version]) -> list[str]:
     declared_file = plugin / "requirements.inprocess.txt"
     owners = packages_distributions()
-    imported = {canonicalize_name(dist) for module in imported_modules(plugin) for dist in owners.get(module, ())}
+    modules = imported_modules(plugin)
+    # 优先用已安装的元数据把模块映射到发行包；检查环境没装该包时退回"模块名即包名"。
+    imported = {canonicalize_name(dist) for module in modules for dist in owners.get(module, ())} | {
+        canonicalize_name(module) for module in modules}
     errors: list[str] = []
     declared: set[str] = set()
     if declared_file.is_file():
