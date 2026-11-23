@@ -48,7 +48,7 @@ export class ClipboardPopover {
     this.editor.append(this.text, footer);
     this.element.append(header, this.editor);
 
-    toggle.addEventListener("click", () => this.setOpen(this.element.hidden));
+    toggle.addEventListener("click", () => this.setOpen(Boolean(this.element.hidden)));
     close.addEventListener("click", () => this.setOpen(false));
     send.addEventListener("click", () => void this.port.paste(this.text.value).then(
       () => this.say("已粘贴"), (error: unknown) => this.say(message(error))));

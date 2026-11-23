@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: extra
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
 
       - name: Read pinned Core version
         id: pin
@@ -63,56 +63,68 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: core/package-lock.json
 
       - name: Compose Core and extra sources
         run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: synth/node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('core/package-lock.json') }}
+
+      - name: Cache bundled wheel sdists
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bundled-wheels-cache
+          key: bundled-wheels-${{ hashFiles('extra/wheels.lock.json') }}
+
+      - name: Cache tsgo
+        id: tsgo-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tsgo
+          key: tsgo-${{ runner.os }}-7.0.0-dev.20260707.2
+
       - name: Install dependencies
         working-directory: synth
+        env:
+          NODE_MODULES_HIT: ${{ steps.node-modules-cache.outputs.cache-hit }}
+          TSGO_HIT: ${{ steps.tsgo-cache.outputs.cache-hit }}
         run: |
-          uv venv .venv --seed --python 3.12
-          uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          (
+            uv venv .venv --python 3.12
+            uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          ) &
+          py_pid=$!
+          npm_pid=""
+          tsgo_pid=""
+          if [ "$NODE_MODULES_HIT" != "true" ]; then
+            npm ci --ignore-scripts --prefer-offline --no-audit --no-fund &
+            npm_pid=$!
+          fi
+          if [ "$TSGO_HIT" != "true" ]; then
+            (
+              mkdir -p "$RUNNER_TEMP/tsgo"
+              npm --prefix "$RUNNER_TEMP/tsgo" install --no-save --no-audit --no-fund @typescript/native-preview@7.0.0-dev.20260707.2
+            ) &
+            tsgo_pid=$!
+          fi
+          wait "$py_pid"
+          if [ -n "$npm_pid" ]; then wait "$npm_pid"; fi
+          if [ -n "$tsgo_pid" ]; then wait "$tsgo_pid"; fi
           echo "$SYNTH_DIR/.venv/bin" >> "$GITHUB_PATH"
-          npm ci --ignore-scripts
+          echo "$RUNNER_TEMP/tsgo/node_modules/.bin" >> "$GITHUB_PATH"
 
-      # 契约检查与 Core 版本绑定：门禁、类型与样式合同都用固定版本 Core 自带的那一套。
-      - name: Plugin boundary gate
-        working-directory: synth
-        run: python scripts/plugin_boundary.py check
-
-      # 插件自带的 wheel 必须等于"从锁定 sha256 的 sdist 用固定构建环境重建"的结果。
-      - name: Check bundled wheels
-        run: python extra/scripts/bundled_wheels.py check --lock extra/wheels.lock.json
-
-      # 进程内依赖声明：普通包要求、与固定版本 Core 的锁兼容、声明的包确实被导入。
-      - name: Check in-process dependency declarations
-        working-directory: synth
-        run: python ../extra/scripts/check_inprocess.py docker/host-runtime/requirements.lock ../extra/plugins
-
-      - name: Lint and type check Python
-        working-directory: synth
+      # 并发执行全部契约检查、测试、前端检查与 release 分支构建（共享已安装的依赖，不再二次 npm ci）。
+      - name: Verify and build release branches
+        env:
+          BUNDLED_WHEELS_CACHE_DIR: ${{ runner.temp }}/bundled-wheels-cache
         run: |
-          names=$(python -c 'import pathlib; print(" ".join(f"plugins/{p.name}" for p in sorted(pathlib.Path("../extra/plugins").iterdir()) if p.is_dir()))')
-          ruff check $names
-          pyright --level error $names
-
-      - name: Run plugin tests
-        working-directory: synth
-        run: |
-          dirs=$(ls -d ../extra/tests/*/ 2>/dev/null | xargs -n1 basename | sed 's#^#tests/#' | tr '\n' ' ')
-          if [ -n "$dirs" ]; then pytest -q $dirs; else echo "no plugin tests"; fi
-
-      - name: Check frontend
-        working-directory: synth
-        run: |
-          npm run typecheck
-          npm run check:css-tokens
-          npm run check:motion
-
-      # 构建全部插件前端并在裸仓库里生成 release 分支；已有分支先从远端取下，tree 没变就不推进。
-      - name: Build release branches
-        run: |
-          python extra/scripts/extra_ci.py build --core "$CORE_DIR" --synth "$SYNTH_DIR" \
+          python extra/scripts/extra_ci.py verify --core "$CORE_DIR" --synth "$SYNTH_DIR" \
             --bare "$RUNNER_TEMP/release.git" --plan "$RUNNER_TEMP/plan.json" --remote "$REMOTE_URL"
 
       - name: Upload build result
