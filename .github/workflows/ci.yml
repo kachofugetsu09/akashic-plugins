@@ -100,30 +100,20 @@ jobs:
       - name: Compose Core and extra sources
         run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
-      - name: Cache Python venv
-        id: venv-cache
-        uses: actions/cache@v4
+      # 直接用 uv 安装（实测 ~5s），比恢复几百 MB 的 .venv/uv 缓存更稳更快。
+      - uses: astral-sh/setup-uv@v6
         with:
-          path: synth/.venv
-          key: venv-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('core/requirements*.txt', 'core/sdk/python/pyproject.toml') }}
+          enable-cache: false
 
-      - name: Setup uv (on cache miss)
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        uses: astral-sh/setup-uv@v6
-
-      - name: Build Python venv (on cache miss)
-        if: steps.venv-cache.outputs.cache-hit != 'true'
+      - name: Install Python deps, lint, typecheck and check in-process deps
         working-directory: synth
         run: |
           uv venv .venv --python 3.12
           uv pip install --python .venv -r requirements-dev.txt -e sdk/python
-
-      - name: Lint, typecheck and check in-process deps
-        run: |
           export PATH="$SYNTH_DIR/.venv/bin:$PATH"
-          "$SYNTH_DIR/.venv/bin/python" extra/scripts/extra_ci.py verify --scope lint --core "$CORE_DIR" --synth "$SYNTH_DIR"
+          "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope lint --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
-  # 独享 runner：pytest -n 2（直接复用缓存的 .venv）。
+  # 独享 runner：pytest -n 2。
   python-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -145,36 +135,24 @@ jobs:
           ref: ${{ steps.pin.outputs.ref }}
           path: core
 
-      - id: py
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Compose Core and extra sources
         run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
-      - name: Cache Python venv
-        id: venv-cache
-        uses: actions/cache@v4
+      - uses: astral-sh/setup-uv@v6
         with:
-          path: synth/.venv
-          key: venv-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('core/requirements*.txt', 'core/sdk/python/pyproject.toml') }}
+          enable-cache: false
 
-      - name: Setup uv (on cache miss)
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        uses: astral-sh/setup-uv@v6
-
-      - name: Build Python venv (on cache miss)
-        if: steps.venv-cache.outputs.cache-hit != 'true'
+      - name: Install Python deps and run plugin tests
         working-directory: synth
         run: |
           uv venv .venv --python 3.12
           uv pip install --python .venv -r requirements-dev.txt -e sdk/python
-
-      - name: Run plugin tests
-        run: |
           export PATH="$SYNTH_DIR/.venv/bin:$PATH"
-          "$SYNTH_DIR/.venv/bin/python" extra/scripts/extra_ci.py verify --scope test --core "$CORE_DIR" --synth "$SYNTH_DIR"
+          "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope test --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
   # 零 Python 第三方依赖：tsgo + 样式/动效合同 + 构建 release 分支（单次缓存恢复 node_modules + tsgo）。
   build:
