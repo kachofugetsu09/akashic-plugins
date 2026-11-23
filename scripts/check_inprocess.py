@@ -37,9 +37,14 @@ def imported_modules(plugin: Path) -> set[str]:
 
 
 # 逐个插件检查；返回错误行，并把提示行打印到标准输出。
-def check_plugin(plugin: Path, pins: dict[str, Version]) -> list[str]:
+def check_plugin(
+    plugin: Path,
+    pins: dict[str, Version],
+    owners: dict[str, list[str]] | None = None,
+) -> list[str]:
     declared_file = plugin / "requirements.inprocess.txt"
-    owners = packages_distributions()
+    if owners is None:
+        owners = packages_distributions()
     modules = imported_modules(plugin)
     # 优先用已安装的元数据把模块映射到发行包；检查环境没装该包时退回"模块名即包名"。
     imported = {canonicalize_name(dist) for module in modules for dist in owners.get(module, ())} | {
@@ -75,7 +80,8 @@ def main() -> int:
     lock = Path(arguments[0])
     plugins_root = Path(arguments[1]) if len(arguments) > 1 else ROOT / "plugins"
     pins = core_pins(lock)
-    errors = [error for plugin in sorted(plugins_root.iterdir()) if plugin.is_dir() for error in check_plugin(plugin, pins)]
+    owners = packages_distributions()
+    errors = [error for plugin in sorted(plugins_root.iterdir()) if plugin.is_dir() for error in check_plugin(plugin, pins, owners)]
     for error in errors:
         print(error, file=sys.stderr)
     return 1 if errors else 0

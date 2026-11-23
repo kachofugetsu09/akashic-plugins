@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -49,23 +50,41 @@ def run(*args: str, env: dict[str, str] | None = None) -> None:
     _ = subprocess.run(args, check=True, env={**os.environ, **(env or {})}, stdout=subprocess.DEVNULL)
 
 
-# 下载 sdist 并先校验 sha256，不对就一个字节都不构建。
-def fetch_sdist(entry: Entry, directory: Path) -> Path:
-    target = directory / entry.sdist_url.rsplit("/", 1)[1]
+# 下载 sdist 并先校验 sha256，不对就一个字节都不构建；命中有效缓存时直接复用。
+def fetch_sdist(entry: Entry, directory: Path, cache_dir: Path | None = None) -> Path:
+    filename = entry.sdist_url.rsplit("/", 1)[1]
+    if cache_dir is not None:
+        cached = cache_dir / filename
+        if cached.is_file() and sha256(cached) == entry.sdist_sha256:
+            return cached
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    target = directory / filename
     with urllib.request.urlopen(entry.sdist_url, timeout=120) as response:  # noqa: S310
         target.write_bytes(response.read())
     if sha256(target) != entry.sdist_sha256:
         raise SystemExit(f"{entry.name}: sdist 的 sha256 与锁文件不一致: {sha256(target)}")
+    if cache_dir is not None:
+        cached = cache_dir / filename
+        tmp = cache_dir / f".{filename}.{os.getpid()}.tmp"
+        shutil.copyfile(target, tmp)
+        tmp.replace(cached)
+        return cached
     return target
 
 
 # 在新建的 venv 里装固定版本的构建后端，固定 SOURCE_DATE_EPOCH 构建 wheel，返回产物路径。
-def build_wheel(entry: Entry, work: Path) -> Path:
-    sdist = fetch_sdist(entry, work)
+def build_wheel(entry: Entry, work: Path, cache_dir: Path | None = None) -> Path:
+    sdist = fetch_sdist(entry, work, cache_dir=cache_dir)
     venv = work / "venv"
-    run(sys.executable, "-m", "venv", str(venv))
-    python = str(venv / "bin" / "python")
-    run(python, "-m", "pip", "install", "-q", "--disable-pip-version-check", *entry.build_requires)
+    uv = shutil.which("uv")
+    if uv:
+        run(uv, "venv", "--seed", "--python", sys.executable, str(venv))
+        python = str(venv / "bin" / "python")
+        run(uv, "pip", "install", "-q", "--python", python, *entry.build_requires)
+    else:
+        run(sys.executable, "-m", "venv", str(venv))
+        python = str(venv / "bin" / "python")
+        run(python, "-m", "pip", "install", "-q", "--disable-pip-version-check", *entry.build_requires)
     out = work / "out"
     out.mkdir()
     run(python, "-m", "pip", "wheel", "-q", "--no-deps", "--no-build-isolation", "--no-binary", ":all:", "-w", str(out), str(sdist),
@@ -86,12 +105,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("build", "check"))
     parser.add_argument("--lock", type=Path, default=ROOT / "wheels.lock.json")
+    default_cache = os.environ.get("BUNDLED_WHEELS_CACHE_DIR")
+    parser.add_argument("--cache-dir", type=Path, default=Path(default_cache) if default_cache else None)
     args = parser.parse_args()
     failed = False
     for entry in load_entries(args.lock):
         committed = ROOT / "plugins" / entry.plugin / "wheels" / entry.wheel
         with tempfile.TemporaryDirectory(prefix="bundled-wheel-") as directory:
-            built = build_wheel(entry, Path(directory))
+            built = build_wheel(entry, Path(directory), cache_dir=args.cache_dir)
             digest = sha256(built)
             print(f"{entry.wheel}: 构建 {digest}  锁文件 {entry.wheel_sha256}")
             if args.command == "build":

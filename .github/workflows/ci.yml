@@ -22,15 +22,16 @@ env:
   REMOTE_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
 jobs:
-  build:
+  # 零第三方依赖：迁移追加检查 + 边界门禁 + bundled wheel 重建校验。
+  python-static:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Check out extra
         uses: actions/checkout@v4
         with:
           path: extra
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Read pinned Core version
         id: pin
@@ -47,18 +48,137 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 已发布的迁移只能追加：用固定版本 Core 的检查脚本对本仓库跑，不另写一份逻辑。
       - name: Published migrations are append-only
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python core/scripts/check_yoyo_migrations.py --root extra --base "$BASE_SHA"
+        run: |
+          git -C extra fetch --no-tags --depth=1 origin "$BASE_SHA"
+          python core/scripts/check_yoyo_migrations.py --root extra --base "$BASE_SHA"
+
+      - name: Compose Core and extra sources
+        run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+      - name: Cache bundled wheel sdists
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bundled-wheels-cache
+          key: bundled-wheels-${{ hashFiles('extra/wheels.lock.json') }}
+
+      - name: Boundary gate and bundled wheels
+        env:
+          BUNDLED_WHEELS_CACHE_DIR: ${{ runner.temp }}/bundled-wheels-cache
+        run: python extra/scripts/extra_ci.py verify --scope static --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+  # 独享 runner：ruff + pyright --threads + 进程内依赖声明检查（直接复用缓存的 .venv）。
+  python-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+        with:
+          path: extra
+          fetch-depth: 1
+
+      - name: Read pinned Core version
+        id: pin
+        run: echo "ref=$(tr -d '[:space:]' < extra/CORE_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Core
+        uses: actions/checkout@v4
+        with:
+          repository: kachofugetsu09/akashic-agent
+          ref: ${{ steps.pin.outputs.ref }}
+          path: core
+
+      - id: py
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compose Core and extra sources
+        run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+      # 直接用 uv 安装（实测 ~5s），比恢复几百 MB 的 .venv/uv 缓存更稳更快。
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Install Python deps, lint, typecheck and check in-process deps
+        working-directory: synth
+        run: |
+          uv venv .venv --python 3.12
+          uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          export PATH="$SYNTH_DIR/.venv/bin:$PATH"
+          "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope lint --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+  # 独享 runner：pytest -n 2。
+  python-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+        with:
+          path: extra
+          fetch-depth: 1
+
+      - name: Read pinned Core version
+        id: pin
+        run: echo "ref=$(tr -d '[:space:]' < extra/CORE_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Core
+        uses: actions/checkout@v4
+        with:
+          repository: kachofugetsu09/akashic-agent
+          ref: ${{ steps.pin.outputs.ref }}
+          path: core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compose Core and extra sources
+        run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
       - uses: astral-sh/setup-uv@v6
         with:
-          enable-cache: true
-          prune-cache: false
-          cache-dependency-glob: core/requirements*.txt
+          enable-cache: false
+
+      - name: Install Python deps and run plugin tests
+        working-directory: synth
+        run: |
+          uv venv .venv --python 3.12
+          uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          export PATH="$SYNTH_DIR/.venv/bin:$PATH"
+          "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope test --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+  # 零 Python 第三方依赖：tsgo + 样式/动效合同 + 构建 release 分支（单次缓存恢复 node_modules + tsgo）。
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+        with:
+          path: extra
+          fetch-depth: 1
+
+      - name: Read pinned Core version
+        id: pin
+        run: echo "ref=$(tr -d '[:space:]' < extra/CORE_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Core
+        uses: actions/checkout@v4
+        with:
+          repository: kachofugetsu09/akashic-agent
+          ref: ${{ steps.pin.outputs.ref }}
+          path: core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - uses: actions/setup-node@v4
         with:
@@ -67,52 +187,33 @@ jobs:
       - name: Compose Core and extra sources
         run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
-      - name: Install dependencies
+      - name: Cache Node dependencies and tsgo
+        id: node-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            synth/node_modules
+            ${{ runner.temp }}/tsgo
+          key: node-and-tsgo-${{ runner.os }}-node22-tsgo7.0.0-dev.20260707.2-${{ hashFiles('core/package-lock.json') }}
+
+      - name: Install Node dependencies and tsgo (on cache miss)
+        if: steps.node-cache.outputs.cache-hit != 'true'
         working-directory: synth
         run: |
-          uv venv .venv --seed --python 3.12
-          uv pip install --python .venv -r requirements-dev.txt -e sdk/python
-          echo "$SYNTH_DIR/.venv/bin" >> "$GITHUB_PATH"
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --prefer-offline --no-audit --no-fund &
+          npm_pid=$!
+          (
+            mkdir -p "$RUNNER_TEMP/tsgo"
+            npm --prefix "$RUNNER_TEMP/tsgo" install --no-save --no-audit --no-fund @typescript/native-preview@7.0.0-dev.20260707.2
+          ) &
+          tsgo_pid=$!
+          wait "$npm_pid"
+          wait "$tsgo_pid"
 
-      # 契约检查与 Core 版本绑定：门禁、类型与样式合同都用固定版本 Core 自带的那一套。
-      - name: Plugin boundary gate
-        working-directory: synth
-        run: python scripts/plugin_boundary.py check
-
-      # 插件自带的 wheel 必须等于"从锁定 sha256 的 sdist 用固定构建环境重建"的结果。
-      - name: Check bundled wheels
-        run: python extra/scripts/bundled_wheels.py check --lock extra/wheels.lock.json
-
-      # 进程内依赖声明：普通包要求、与固定版本 Core 的锁兼容、声明的包确实被导入。
-      - name: Check in-process dependency declarations
-        working-directory: synth
-        run: python ../extra/scripts/check_inprocess.py docker/host-runtime/requirements.lock ../extra/plugins
-
-      - name: Lint and type check Python
-        working-directory: synth
+      - name: Verify frontend and build release branches
         run: |
-          names=$(python -c 'import pathlib; print(" ".join(f"plugins/{p.name}" for p in sorted(pathlib.Path("../extra/plugins").iterdir()) if p.is_dir()))')
-          ruff check $names
-          pyright --level error $names
-
-      - name: Run plugin tests
-        working-directory: synth
-        run: |
-          dirs=$(ls -d ../extra/tests/*/ 2>/dev/null | xargs -n1 basename | sed 's#^#tests/#' | tr '\n' ' ')
-          if [ -n "$dirs" ]; then pytest -q $dirs; else echo "no plugin tests"; fi
-
-      - name: Check frontend
-        working-directory: synth
-        run: |
-          npm run typecheck
-          npm run check:css-tokens
-          npm run check:motion
-
-      # 构建全部插件前端并在裸仓库里生成 release 分支；已有分支先从远端取下，tree 没变就不推进。
-      - name: Build release branches
-        run: |
-          python extra/scripts/extra_ci.py build --core "$CORE_DIR" --synth "$SYNTH_DIR" \
+          export PATH="$RUNNER_TEMP/tsgo/node_modules/.bin:$PATH"
+          python extra/scripts/extra_ci.py verify --scope web --core "$CORE_DIR" --synth "$SYNTH_DIR" \
             --bare "$RUNNER_TEMP/release.git" --plan "$RUNNER_TEMP/plan.json" --remote "$REMOTE_URL"
 
       - name: Upload build result
@@ -128,7 +229,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [python-static, python-lint, python-test, build]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
