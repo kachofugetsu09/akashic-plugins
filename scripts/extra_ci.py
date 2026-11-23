@@ -105,7 +105,12 @@ def _load_pkg_fixture(synth: Path):
 
 
 # 复用 synth 已装好的 node_modules 构建插件前端并并行写入 release tree；与 pkg_fixture_repo.py 逐字节等价。
-def _build_release_fast(synth: Path, bare: Path, names: list[str]) -> list[dict[str, str]]:
+def _build_release_fast(
+    synth: Path,
+    bare: Path,
+    names: list[str],
+    fetch_future=None,
+) -> list[dict[str, str]]:
     fixture = _load_pkg_fixture(synth)
     commit = fixture.git(synth, "rev-parse", "--verify", "--end-of-options", "HEAD^{commit}").decode().strip()
     fixture.ensure_bare_repo(bare)
@@ -115,6 +120,10 @@ def _build_release_fast(synth: Path, bare: Path, names: list[str]) -> list[dict[
     env = {**os.environ, "CI": "1"}
     _ = subprocess.run(build_cmd, cwd=synth, env=env, check=True)
     generated_root = synth / "plugins"
+
+    # 确保远端 release/* fetch 已完成，再向 bare 写对象和比对分支。
+    if fetch_future is not None:
+        fetch_future.result()
 
     def stage_one(name: str) -> tuple[str, str]:
         root = f"plugins/{name}"
@@ -147,19 +156,27 @@ def _build_release_fast(synth: Path, bare: Path, names: list[str]) -> list[dict[
 # 构建：先把远端已有 release 分支取进裸仓库（tree 对比的基准），再生成 release 分支与发布计划。
 def build(core: Path, synth: Path, bare: Path, remote: str | None, plan: Path) -> None:
     _ = run("git", "init", "-q", "--bare", "--initial-branch=release", str(bare))
-    if remote:
-        _ = run("git", "fetch", "-q", "--no-tags", "--depth=1", remote,
-                "+refs/heads/release/*:refs/heads/release/*", cwd=bare)
-        # index 分支可能还不存在（第一次发布前）：取不到就当作新分支。
-        _ = subprocess.run(["git", "fetch", "-q", "--no-tags", "--depth=1", remote,
-                            "+refs/heads/index:refs/heads/index"], cwd=bare)
-    before = release_heads(bare)
-    old_index = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/index"], cwd=bare,
-                               stdout=subprocess.PIPE, text=True).stdout.strip()
+
+    def _fetch_remote() -> tuple[dict[str, str], str]:
+        if remote:
+            _ = run("git", "fetch", "-q", "--no-tags", "--depth=1", remote,
+                    "+refs/heads/release/*:refs/heads/release/*", cwd=bare)
+            # index 分支可能还不存在（第一次发布前）：取不到就当作新分支。
+            _ = subprocess.run(["git", "fetch", "-q", "--no-tags", "--depth=1", remote,
+                                "+refs/heads/index:refs/heads/index"], cwd=bare)
+        heads = release_heads(bare)
+        idx = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/index"], cwd=bare,
+                             stdout=subprocess.PIPE, text=True).stdout.strip()
+        return heads, idx
+
     names = plugin_names()
     if (synth / "node_modules").is_dir():
-        rows = _build_release_fast(synth, bare, names)
+        with ThreadPoolExecutor(max_workers=1) as fetch_pool:
+            fetch_future = fetch_pool.submit(_fetch_remote)
+            rows = _build_release_fast(synth, bare, names, fetch_future=fetch_future)
+            before, old_index = fetch_future.result()
     else:
+        before, old_index = _fetch_remote()
         out = run(sys.executable, str(core / "scripts/pkg_fixture_repo.py"), *names,
                   "--repository", str(synth), "--revision", "HEAD", "--output", str(bare))
         rows = json.loads(out)
@@ -213,21 +230,29 @@ def verify(
 
     tasks: list[tuple[str, list[list[str]], Path]] = []
 
-    if scope in ("all", "python"):
+    if scope in ("all", "python", "static"):
         if not skip_boundary:
             tasks.append(("Plugin boundary gate", [[sys.executable, "scripts/plugin_boundary.py", "check"]], synth))
-        tasks.append(("Lint and type check Python", [
-            ["ruff", "check", *plugin_paths],
-            ["pyright", "--threads", "2", "--level", "error", *plugin_paths],
-        ], synth))
-        tasks.append(("Run plugin tests", [["pytest", "-q", *test_dirs]] if test_dirs else [], synth))
         tasks.append(("Check bundled wheels", [[
             sys.executable, str(ROOT / "scripts/bundled_wheels.py"), "check", "--lock", str(ROOT / "wheels.lock.json"),
         ]], ROOT))
+
+    if scope in ("all", "python", "lint"):
+        pyright_cmd = ["pyright", "--threads", "--level", "error", *plugin_paths] if scope == "lint" else [
+            "pyright", "--threads", "2", "--level", "error", *plugin_paths,
+        ]
+        tasks.append(("Lint and type check Python", [
+            ["ruff", "check", *plugin_paths],
+            pyright_cmd,
+        ], synth))
         tasks.append(("Check in-process dependencies", [[
             sys.executable, str(ROOT / "scripts/check_inprocess.py"),
             "docker/host-runtime/requirements.lock", str(ROOT / "plugins"),
         ]], synth))
+
+    if scope in ("all", "python", "test"):
+        pytest_cmd = ["pytest", "-q", "-n", "2", *test_dirs] if scope == "test" else ["pytest", "-q", *test_dirs]
+        tasks.append(("Run plugin tests", [pytest_cmd] if test_dirs else [], synth))
 
     if scope in ("all", "web"):
         assert bare is not None and plan is not None
@@ -323,7 +348,7 @@ def main() -> None:
         item.add_argument("--plan", type=Path, required=True)
     verify_p.add_argument("--bare", type=Path, default=None)
     verify_p.add_argument("--plan", type=Path, default=None)
-    verify_p.add_argument("--scope", choices=("all", "python", "web"), default="all")
+    verify_p.add_argument("--scope", choices=("all", "python", "static", "lint", "test", "web"), default="all")
     verify_p.add_argument("--skip-boundary", action="store_true")
     for item in (build_p, verify_p):
         item.add_argument("--remote", default=None)
