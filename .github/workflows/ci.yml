@@ -22,9 +22,9 @@ env:
   REMOTE_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
 jobs:
-  build:
+  check-python:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Check out extra
         uses: actions/checkout@v4
@@ -62,6 +62,69 @@ jobs:
           prune-cache: false
           cache-dependency-glob: core/requirements*.txt
 
+      - name: Compose Core and extra sources
+        run: python extra/scripts/extra_ci.py compose --core "$CORE_DIR" --synth "$SYNTH_DIR"
+
+      - name: Cache bundled wheel sdists
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bundled-wheels-cache
+          key: bundled-wheels-${{ hashFiles('extra/wheels.lock.json') }}
+
+      # plugin_boundary 只用标准库，与 uv 安装重叠起跑；.venv 就绪后并发跑其余 Python 门禁与测试。
+      - name: Install Python deps and run checks
+        env:
+          BUNDLED_WHEELS_CACHE_DIR: ${{ runner.temp }}/bundled-wheels-cache
+        run: |
+          boundary_log="$RUNNER_TEMP/plugin_boundary.log"
+          (cd "$SYNTH_DIR" && python scripts/plugin_boundary.py check) >"$boundary_log" 2>&1 &
+          boundary_pid=$!
+
+          uv venv "$SYNTH_DIR/.venv" --python 3.12
+          uv pip install --python "$SYNTH_DIR/.venv" -r "$SYNTH_DIR/requirements-dev.txt" -e "$SYNTH_DIR/sdk/python"
+          export PATH="$SYNTH_DIR/.venv/bin:$PATH"
+
+          verify_rc=0
+          "$SYNTH_DIR/.venv/bin/python" extra/scripts/extra_ci.py verify \
+            --scope python --skip-boundary --core "$CORE_DIR" --synth "$SYNTH_DIR" || verify_rc=$?
+
+          boundary_rc=0
+          wait "$boundary_pid" || boundary_rc=$?
+          if [ "$boundary_rc" -eq 0 ]; then
+            echo "::group::Plugin boundary gate (PASS)"
+            cat "$boundary_log"
+            echo "::endgroup::"
+          else
+            echo "::error::Plugin boundary gate failed (exit=$boundary_rc)"
+            cat "$boundary_log"
+          fi
+          [ "$verify_rc" -eq 0 ] && [ "$boundary_rc" -eq 0 ]
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out extra
+        uses: actions/checkout@v4
+        with:
+          path: extra
+          fetch-depth: 1
+
+      - name: Read pinned Core version
+        id: pin
+        run: echo "ref=$(tr -d '[:space:]' < extra/CORE_REF)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Core
+        uses: actions/checkout@v4
+        with:
+          repository: kachofugetsu09/akashic-agent
+          ref: ${{ steps.pin.outputs.ref }}
+          path: core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -78,12 +141,6 @@ jobs:
           path: synth/node_modules
           key: node-modules-${{ runner.os }}-node22-${{ hashFiles('core/package-lock.json') }}
 
-      - name: Cache bundled wheel sdists
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/bundled-wheels-cache
-          key: bundled-wheels-${{ hashFiles('extra/wheels.lock.json') }}
-
       - name: Cache tsgo
         id: tsgo-cache
         uses: actions/cache@v4
@@ -91,17 +148,12 @@ jobs:
           path: ${{ runner.temp }}/tsgo
           key: tsgo-${{ runner.os }}-7.0.0-dev.20260707.2
 
-      - name: Install dependencies
+      - name: Install Node dependencies (on cache miss)
         working-directory: synth
         env:
           NODE_MODULES_HIT: ${{ steps.node-modules-cache.outputs.cache-hit }}
           TSGO_HIT: ${{ steps.tsgo-cache.outputs.cache-hit }}
         run: |
-          (
-            uv venv .venv --python 3.12
-            uv pip install --python .venv -r requirements-dev.txt -e sdk/python
-          ) &
-          py_pid=$!
           npm_pid=""
           tsgo_pid=""
           if [ "$NODE_MODULES_HIT" != "true" ]; then
@@ -115,18 +167,14 @@ jobs:
             ) &
             tsgo_pid=$!
           fi
-          wait "$py_pid"
           if [ -n "$npm_pid" ]; then wait "$npm_pid"; fi
           if [ -n "$tsgo_pid" ]; then wait "$tsgo_pid"; fi
-          echo "$SYNTH_DIR/.venv/bin" >> "$GITHUB_PATH"
           echo "$RUNNER_TEMP/tsgo/node_modules/.bin" >> "$GITHUB_PATH"
 
-      # 并发执行全部契约检查、测试、前端检查与 release 分支构建（共享已安装的依赖，不再二次 npm ci）。
-      - name: Verify and build release branches
-        env:
-          BUNDLED_WHEELS_CACHE_DIR: ${{ runner.temp }}/bundled-wheels-cache
+      # 并发执行前端检查（tsgo + 样式/动效合同）与 release 分支构建（复用 node_modules，只用标准库 Python）。
+      - name: Verify frontend and build release branches
         run: |
-          python extra/scripts/extra_ci.py verify --core "$CORE_DIR" --synth "$SYNTH_DIR" \
+          python extra/scripts/extra_ci.py verify --scope web --core "$CORE_DIR" --synth "$SYNTH_DIR" \
             --bare "$RUNNER_TEMP/release.git" --plan "$RUNNER_TEMP/plan.json" --remote "$REMOTE_URL"
 
       - name: Upload build result
@@ -142,7 +190,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [check-python, build]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10

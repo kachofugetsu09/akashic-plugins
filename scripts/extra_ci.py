@@ -197,55 +197,66 @@ def _prepare_tsgo_configs(synth: Path) -> tuple[Path, Path]:
     return main_out, design_out
 
 
-# 并发执行全部 CI 检查与 release 分支构建（LPT 顺序提交以最大化多核利用率）。
-def verify(core: Path, synth: Path, bare: Path, remote: str | None, plan: Path) -> None:
+# 并发执行 CI 检查与 release 分支构建；scope 支持 all / python / web。
+def verify(
+    core: Path,
+    synth: Path,
+    bare: Path | None,
+    remote: str | None,
+    plan: Path | None,
+    scope: str = "all",
+    skip_boundary: bool = False,
+) -> None:
     names = plugin_names()
     plugin_paths = [f"plugins/{name}" for name in names]
     test_dirs = [f"tests/{p.name}" for p in sorted((ROOT / "tests").iterdir()) if p.is_dir()] if (ROOT / "tests").is_dir() else []
 
-    build_cmd = [
-        sys.executable, str(Path(__file__).resolve()), "build",
-        "--core", str(core), "--synth", str(synth),
-        "--bare", str(bare), "--plan", str(plan),
-    ]
-    if remote:
-        build_cmd.extend(["--remote", remote])
+    tasks: list[tuple[str, list[list[str]], Path]] = []
 
-    tsgo = shutil.which("tsgo")
-    if tsgo:
-        ts_main, ts_design = _prepare_tsgo_configs(synth)
-        frontend_typecheck_cmds = [
-            [tsgo, "--noEmit", "-p", str(ts_main)],
-            [tsgo, "--noEmit", "-p", str(ts_design)],
-        ]
-    else:
-        frontend_typecheck_cmds = [
-            ["npx", "--no-install", "tsc", "--noEmit"],
-            ["npx", "--no-install", "tsc", "--noEmit", "-p", "frontend/plugins/design/editor/tsconfig.json"],
-        ]
-
-    # 按典型耗时从长到短排列（LPT 调度），互不依赖、互不冲突。
-    tasks: list[tuple[str, list[list[str]], Path]] = [
-        ("Plugin boundary gate", [[sys.executable, "scripts/plugin_boundary.py", "check"]], synth),
-        ("Lint and type check Python", [
+    if scope in ("all", "python"):
+        if not skip_boundary:
+            tasks.append(("Plugin boundary gate", [[sys.executable, "scripts/plugin_boundary.py", "check"]], synth))
+        tasks.append(("Lint and type check Python", [
             ["ruff", "check", *plugin_paths],
-            ["pyright", "--threads", "--level", "error", *plugin_paths],
-        ], synth),
-        ("Build release branches", [build_cmd], ROOT),
-        ("Run plugin tests", [["pytest", "-q", *test_dirs]] if test_dirs else [], synth),
-        ("Check frontend", [
+            ["pyright", "--threads", "2", "--level", "error", *plugin_paths],
+        ], synth))
+        tasks.append(("Run plugin tests", [["pytest", "-q", *test_dirs]] if test_dirs else [], synth))
+        tasks.append(("Check bundled wheels", [[
+            sys.executable, str(ROOT / "scripts/bundled_wheels.py"), "check", "--lock", str(ROOT / "wheels.lock.json"),
+        ]], ROOT))
+        tasks.append(("Check in-process dependencies", [[
+            sys.executable, str(ROOT / "scripts/check_inprocess.py"),
+            "docker/host-runtime/requirements.lock", str(ROOT / "plugins"),
+        ]], synth))
+
+    if scope in ("all", "web"):
+        assert bare is not None and plan is not None
+        build_cmd = [
+            sys.executable, str(Path(__file__).resolve()), "build",
+            "--core", str(core), "--synth", str(synth),
+            "--bare", str(bare), "--plan", str(plan),
+        ]
+        if remote:
+            build_cmd.extend(["--remote", remote])
+
+        tsgo = shutil.which("tsgo")
+        if tsgo:
+            ts_main, ts_design = _prepare_tsgo_configs(synth)
+            frontend_typecheck_cmds = [
+                [tsgo, "--noEmit", "-p", str(ts_main)],
+                [tsgo, "--noEmit", "-p", str(ts_design)],
+            ]
+        else:
+            frontend_typecheck_cmds = [
+                ["npx", "--no-install", "tsc", "--noEmit"],
+                ["npx", "--no-install", "tsc", "--noEmit", "-p", "frontend/plugins/design/editor/tsconfig.json"],
+            ]
+        tasks.append(("Build release branches", [build_cmd], ROOT))
+        tasks.append(("Check frontend", [
             *frontend_typecheck_cmds,
             ["npm", "run", "check:css-tokens"],
             ["npm", "run", "check:motion"],
-        ], synth),
-        ("Check bundled wheels", [[
-            sys.executable, str(ROOT / "scripts/bundled_wheels.py"), "check", "--lock", str(ROOT / "wheels.lock.json"),
-        ]], ROOT),
-        ("Check in-process dependencies", [[
-            sys.executable, str(ROOT / "scripts/check_inprocess.py"),
-            "docker/host-runtime/requirements.lock", str(ROOT / "plugins"),
-        ]], synth),
-    ]
+        ], synth))
 
     def run_task(item: tuple[str, list[list[str]], Path]) -> tuple[str, int, float, str]:
         label, commands, cwd = item
@@ -262,13 +273,13 @@ def verify(core: Path, synth: Path, bare: Path, remote: str | None, plan: Path) 
         return label, 0, time.monotonic() - started, "".join(chunks)
 
     total_start = time.monotonic()
-    workers = max(4, os.cpu_count() or 4)
+    workers = min(len(tasks), max(2, os.cpu_count() or 2))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(run_task, tasks))
     total_elapsed = time.monotonic() - total_start
 
     failed: list[tuple[str, int, float, str]] = []
-    print(f"=== CI verify summary (wall: {total_elapsed:.1f}s, workers: {workers}) ===")
+    print(f"=== CI verify[{scope}] summary (wall: {total_elapsed:.1f}s, workers: {workers}) ===")
     for label, code, elapsed, output in results:
         status = "PASS" if code == 0 else f"FAIL(exit={code})"
         print(f"  [{status:12s}] {elapsed:5.1f}s  {label}")
@@ -307,9 +318,13 @@ def main() -> None:
         item.add_argument("--core", type=Path, required=True, help="固定版本的 Core 检出")
         item.add_argument("--synth", type=Path, required=True, help="合成源码目录（compose 输出、build 输入）")
     compose_p.add_argument("--ref", default=None, help="默认读 CORE_REF")
-    for item in (build_p, verify_p, push_p):
+    for item in (build_p, push_p):
         item.add_argument("--bare", type=Path, required=True)
         item.add_argument("--plan", type=Path, required=True)
+    verify_p.add_argument("--bare", type=Path, default=None)
+    verify_p.add_argument("--plan", type=Path, default=None)
+    verify_p.add_argument("--scope", choices=("all", "python", "web"), default="all")
+    verify_p.add_argument("--skip-boundary", action="store_true")
     for item in (build_p, verify_p):
         item.add_argument("--remote", default=None)
     push_p.add_argument("--remote", required=True)
@@ -320,7 +335,15 @@ def main() -> None:
     elif args.command == "build":
         build(args.core.resolve(), args.synth.resolve(), args.bare.resolve(), args.remote, args.plan.resolve())
     elif args.command == "verify":
-        verify(args.core.resolve(), args.synth.resolve(), args.bare.resolve(), args.remote, args.plan.resolve())
+        verify(
+            args.core.resolve(),
+            args.synth.resolve(),
+            args.bare.resolve() if args.bare else None,
+            args.remote,
+            args.plan.resolve() if args.plan else None,
+            scope=args.scope,
+            skip_boundary=args.skip_boundary,
+        )
     else:
         push(args.bare.resolve(), args.remote, args.plan.resolve())
 
