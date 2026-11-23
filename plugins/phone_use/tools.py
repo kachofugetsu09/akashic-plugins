@@ -31,8 +31,6 @@ from .events import (
     AdapterKind,
     PhoneEventStore,
     PhoneSubscriptionRule,
-    RuleActionsConfig,
-    RuleMatchConfig,
 )
 from .safety import format_screen_snapshot
 
