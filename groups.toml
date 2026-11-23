@@ -60,6 +60,11 @@ title = "通道"
 description = "Telegram 收发"
 members = ["telegram_sender", "telegram_channel"]
 
+[groups.mobile]
+title = "手机端侧"
+description = "后台虚拟屏操控手机、事件订阅与看屏唤起"
+members = ["phone-use", "phone-assist"]
+
 [groups.advanced]
 title = "开发者"
 description = "设计画布、可视化、稳定视图"
