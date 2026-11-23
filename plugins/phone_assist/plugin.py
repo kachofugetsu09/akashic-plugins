@@ -25,7 +25,12 @@ async def apply(ctx: Context) -> None:
     cfg = ctx.config if isinstance(ctx.config, dict) else {}
     project_id = str(cfg.get("project_id") or DEFAULT_PROJECT_ID)
     project_name = str(cfg.get("project_name") or DEFAULT_PROJECT_NAME)
-    resume_window = int(cfg.get("resume_window_seconds") or DEFAULT_RESUME_WINDOW_SECONDS)
+    raw_window = cfg.get("resume_window_seconds")
+    resume_window = (
+        raw_window
+        if isinstance(raw_window, int) and not isinstance(raw_window, bool)
+        else DEFAULT_RESUME_WINDOW_SECONDS
+    )
 
     store = AssistStore(
         ctx.data_root,

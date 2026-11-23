@@ -5,7 +5,7 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from pydantic import ValidationError
 
@@ -51,16 +51,18 @@ from .tools import (
     snapshot_to_parts,
 )
 
+if TYPE_CHECKING:
+    from plugins.watch.contract import WatchEvents
+
 try:
-    from plugins.watch.contract import WATCH_EVENTS, WatchEvents
+    from plugins.watch.contract import WATCH_EVENTS
 except ImportError:
-    WATCH_EVENTS = None  # type: ignore[assignment]
-    WatchEvents = None  # type: ignore[assignment,misc]
+    WATCH_EVENTS = None
 
 try:
     from plugins.userinformation.contract import USER_INFORMATION
 except ImportError:
-    USER_INFORMATION = None  # type: ignore[assignment]
+    USER_INFORMATION = None
 
 PHONE_CONTROL = ServiceKey["PhoneControl"]("phone.control.v1")
 
@@ -201,11 +203,13 @@ class PhoneControl:
         requested_device = cast(str | None, arguments.get("device_id"))
         device_id = self.bridge.resolve_device_id(requested_device)
         identity = _parse_call_identity(arguments, device_id)
+        raw_timeout = arguments.get("timeout_ms")
+        timeout_ms = raw_timeout if isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) else 20_000
         return await self.bridge.observe(
             device_id,
             include_screenshot=bool(arguments.get("include_screenshot", False)),
             auto_screenshot=True,
-            timeout_ms=int(arguments.get("timeout_ms", 20_000)),
+            timeout_ms=timeout_ms,
             before_send=lambda: self._record_started(key, control_binding, identity),
         )
 
@@ -610,9 +614,10 @@ async def apply(ctx: Context) -> None:
 
     _ = await ctx.on(RUNTIME_STARTED, start_follower)
 
-    if WATCH_EVENTS is not None:
+    watch_key = WATCH_EVENTS
+    if watch_key is not None:
         async def attach_watch(child: Context) -> None:
-            entry = (child, child.require(WATCH_EVENTS))
+            entry = (child, child.require(watch_key))
             watch_port.append(entry)
 
             def detach() -> None:
@@ -621,12 +626,13 @@ async def apply(ctx: Context) -> None:
 
             _ = await child.effect(lambda: detach, label="phone-watch-port")
 
-        _ = await ctx.inject((WATCH_EVENTS,), attach_watch, name="phone-watch-events")
+        _ = await ctx.inject((watch_key,), attach_watch, name="phone-watch-events")
 
-    if USER_INFORMATION is not None:
+    user_info_key = USER_INFORMATION
+    if user_info_key is not None:
         _ = await ctx.inject(
-            (USER_INFORMATION,),
-            lambda child: child.require(USER_INFORMATION).register(child, PhoneInformationProvider(event_store)),
+            (user_info_key,),
+            lambda child: child.require(user_info_key).register(child, PhoneInformationProvider(event_store)),
             name="phone-user-information",
         )
 
@@ -772,8 +778,15 @@ async def _start_follower(
         await reconcile_orphaned(active)
 
     follow_iter = catalog.follow().__aiter__()
-    follow_task = asyncio.create_task(follow_iter.__anext__(), name="phone-follow-next")
-    wake_task = asyncio.create_task(wake_reconcile.wait(), name="phone-wake-wait")
+
+    async def _next_catalog() -> object:
+        return await follow_iter.__anext__()
+
+    async def _wait_wake() -> bool:
+        return await wake_reconcile.wait()
+
+    follow_task = asyncio.create_task(_next_catalog(), name="phone-follow-next")
+    wake_task = asyncio.create_task(_wait_wake(), name="phone-wake-wait")
     try:
         while True:
             done, _ = await asyncio.wait((follow_task, wake_task), return_when=asyncio.FIRST_COMPLETED)
@@ -782,10 +795,10 @@ async def _start_follower(
                     _ = follow_task.result()
                 except StopAsyncIteration:
                     break
-                follow_task = asyncio.create_task(follow_iter.__anext__(), name="phone-follow-next")
+                follow_task = asyncio.create_task(_next_catalog(), name="phone-follow-next")
             if wake_task in done:
                 wake_reconcile.clear()
-                wake_task = asyncio.create_task(wake_reconcile.wait(), name="phone-wake-wait")
+                wake_task = asyncio.create_task(_wait_wake(), name="phone-wake-wait")
             async with ctx.runtime_scope():
                 active = await once()
                 await reconcile_orphaned(active)

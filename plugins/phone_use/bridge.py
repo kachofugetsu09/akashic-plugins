@@ -156,12 +156,14 @@ class PhoneBridge:
         )
         raw_vd = hello.get("virtual_display_id")
         vd_id = int(raw_vd) if isinstance(raw_vd, int) and not isinstance(raw_vd, bool) and raw_vd >= 0 else None
+        raw_sdk = hello.get("sdk_int")
+        sdk_int = raw_sdk if isinstance(raw_sdk, int) and not isinstance(raw_sdk, bool) else 34
         session = _NodeSession(
             device_id=device_id,
             connection_id=f"conn-{uuid4().hex}",
             device_name=str(hello.get("device_name") or device_id),
             model=str(hello.get("model") or "Android"),
-            sdk_int=int(hello.get("sdk_int") if isinstance(hello.get("sdk_int"), int) else 34),
+            sdk_int=sdk_int,
             shell_version=str(hello.get("shell_version") or "0.2.1"),
             display_mode=_valid_display_mode(hello.get("display_mode")),
             virtual_display_id=vd_id,
@@ -270,7 +272,10 @@ class PhoneBridge:
                 fut.set_exception(PhoneNodeError(f"设备 {session.device_id} 连接中断: {reason}"))
         session.pending.clear()
         # 2. 关闭任务由桥接持有，即使原 RPC 已超时也不丢失 owner。
-        closing = asyncio.create_task(session.close_transport(), name=f"phone-close:{session.device_id}")
+        async def _close_transport() -> None:
+            await session.close_transport()
+
+        closing = asyncio.create_task(_close_transport(), name=f"phone-close:{session.device_id}")
         self._closing_transports.add(closing)
         closing.add_done_callback(self._transport_closed)
         if deadline is None:
@@ -586,19 +591,27 @@ class PhoneBridge:
         raw_image = raw.get("screenshot_b64")
         if isinstance(raw_image, str) and raw_image:
             png_bytes = base64.b64decode(raw_image, validate=True)
+        raw_display_id = raw.get("display_id")
+        display_id = (
+            raw_display_id
+            if isinstance(raw_display_id, int) and not isinstance(raw_display_id, bool)
+            else (session.virtual_display_id or 2)
+            if session
+            else 2
+        )
+        raw_width = raw.get("width")
+        width = raw_width if isinstance(raw_width, int) and not isinstance(raw_width, bool) else 1080
+        raw_height = raw.get("height")
+        height = raw_height if isinstance(raw_height, int) and not isinstance(raw_height, bool) else 2400
+        raw_rotation = raw.get("rotation")
+        rotation = raw_rotation if isinstance(raw_rotation, int) and not isinstance(raw_rotation, bool) else 0
         return PhoneScreenSnapshot(
             device_id=device_id,
             snapshot_ref=snapshot_ref,
-            display_id=int(
-                raw.get("display_id")
-                if isinstance(raw.get("display_id"), int)
-                else (session.virtual_display_id or 2)
-                if session
-                else 2
-            ),
-            width=int(raw.get("width") if isinstance(raw.get("width"), int) else 1080),
-            height=int(raw.get("height") if isinstance(raw.get("height"), int) else 2400),
-            rotation=int(raw.get("rotation") if isinstance(raw.get("rotation"), int) else 0),
+            display_id=display_id,
+            width=width,
+            height=height,
+            rotation=rotation,
             package_name=package_name,
             activity_name=activity_name,
             pip_state=pip_state,

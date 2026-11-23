@@ -399,29 +399,39 @@ class PhoneEventsTool:
     async def invoke(self, key: str, arguments: Mapping[str, object]) -> Result:
         _ = key
         action = str(arguments.get("action") or "recent_events")
+        raw_since = arguments.get("since_hours")
+        since_hours = float(raw_since) if isinstance(raw_since, (int, float)) and not isinstance(raw_since, bool) else 24.0
+        raw_limit = arguments.get("limit")
+        limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) else 30
+        adapter_arg = arguments.get("adapter")
+        adapter = adapter_arg if isinstance(adapter_arg, str) else None
+        pkg_arg = arguments.get("package_name")
+        package_name = pkg_arg if isinstance(pkg_arg, str) else None
+        dev_arg = arguments.get("device_id")
+        device_id = dev_arg if isinstance(dev_arg, str) else None
         if action == "recent_events":
             data = await run_file_io(
                 lambda: self._store.query_recent_events(
-                    adapter=arguments.get("adapter") if isinstance(arguments.get("adapter"), str) else None,
-                    package_name=arguments.get("package_name") if isinstance(arguments.get("package_name"), str) else None,
-                    device_id=arguments.get("device_id") if isinstance(arguments.get("device_id"), str) else None,
-                    since_hours=float(arguments.get("since_hours") or 24.0),
-                    limit=int(arguments.get("limit") or 30),
+                    adapter=adapter,
+                    package_name=package_name,
+                    device_id=device_id,
+                    since_hours=since_hours,
+                    limit=limit,
                 )
             )
         elif action == "app_sessions":
             data = await run_file_io(
                 lambda: self._store.query_app_sessions(
-                    package_name=arguments.get("package_name") if isinstance(arguments.get("package_name"), str) else None,
-                    device_id=arguments.get("device_id") if isinstance(arguments.get("device_id"), str) else None,
-                    since_hours=float(arguments.get("since_hours") or 24.0),
-                    limit=int(arguments.get("limit") or 30),
+                    package_name=package_name,
+                    device_id=device_id,
+                    since_hours=since_hours,
+                    limit=limit,
                 )
             )
         else:
             data = await run_file_io(
                 lambda: self._store.query_current_state(
-                    device_id=arguments.get("device_id") if isinstance(arguments.get("device_id"), str) else None,
+                    device_id=device_id,
                 )
             )
         return Result("success", (ContentPart("text", json.dumps(data, ensure_ascii=False, indent=2)),))
@@ -504,6 +514,14 @@ class PhoneShellTool:
     def __init__(self, bridge: PhoneBridge) -> None:
         self._bridge = bridge
 
+    async def invoke(self, key: str, arguments: Mapping[str, object]) -> Result:
+        _ = key
+        return await self.execute(arguments)
+
+    async def query(self, key: str) -> Result | None:
+        _ = key
+        return None
+
     async def execute(self, arguments: Mapping[str, object]) -> Result:
         params = PhoneShellInput.model_validate(json_value(arguments))
         try:
@@ -549,6 +567,14 @@ class PhoneFileTool:
     def __init__(self, bridge: PhoneBridge) -> None:
         self._bridge = bridge
 
+    async def invoke(self, key: str, arguments: Mapping[str, object]) -> Result:
+        _ = key
+        return await self.execute(arguments)
+
+    async def query(self, key: str) -> Result | None:
+        _ = key
+        return None
+
     async def execute(self, arguments: Mapping[str, object]) -> Result:
         import base64
         from pathlib import Path
@@ -568,7 +594,8 @@ class PhoneFileTool:
                     res = await self._bridge.read_file_chunk(
                         params.device_id, params.remote_path, offset=offset, max_bytes=self.CHUNK_BYTES
                     )
-                    size = int(res.get("size") or 0)
+                    raw_size = res.get("size")
+                    size = raw_size if isinstance(raw_size, int) and not isinstance(raw_size, bool) else 0
                     if size > self.MAX_FILE_BYTES:
                         return Result(
                             parts=(ContentPart("text", f"手机文件过大（{size} bytes，上限 20MB）"),),

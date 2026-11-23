@@ -240,7 +240,7 @@ def create_phone_app(
             raise HTTPException(status_code=400, detail="events 必须是数组")
         if len(raw_events) > 200:
             raise HTTPException(status_code=400, detail="单次上报事件数不能超过 200")
-        normalized = [item for item in raw_events if isinstance(item, dict)]
+        normalized: list[Mapping[str, object]] = [item for item in raw_events if isinstance(item, dict)]
         accepted = await run_file_io(lambda: event_store.ingest_events(device_id, normalized))
         if accepted and on_events_ingested is not None:
             await on_events_ingested(accepted)
