@@ -21,9 +21,11 @@ from . import panel, recent, scripts, timeline, trail, wake
 from .events import Event, EventLog, clip, load_places, name_places, normalize, parse_line, read_day, read_sources
 from .settings import WAKE_MODEL, Config
 from .watcher import Call, Files, ModelFailure, ModelStats, Outcome, Reply, Verdict, judge
+from .watcher import standing as watch_standing
 
 logger = logging.getLogger(__name__)
 CHUNK, MAX_CHUNKS, WAKE_EVENTS = 40, 5, 6
+PROFILE_LIMIT = 8000
 
 
 @dataclass(slots=True)
@@ -262,11 +264,7 @@ class Runtime:
         turns = await self._turns(now)
         memory = self.files.text(self.config.memory_file) or ""
         cases = _tail(self.root / "cases.md", 20)
-        standing = "\n\n".join(part for part in (
-            "用户的长期记忆：\n" + memory if memory else "",
-            "嘱托（主 Agent 写给你的）。\n" + order_text,
-            "主 Agent 对你过去判断的纠正：\n" + cases if cases else "",
-        ) if part)
+        standing = watch_standing(memory, (self.files.text(self.config.profile_file) or "")[:PROFILE_LIMIT], order_text, cases)
         live = "\n\n".join((
             "主 Agent 和用户最近的对话（从旧到新）：\n" + recent.render(turns, now),
             recent.stats(turns, now),
@@ -391,7 +389,7 @@ class Runtime:
         if (now.hour, now.minute) < (hour, minute):
             return
         soon = [order.raw for order in watch_orders.expiring(orders, now.date())]
-        status = await self._run_agent(now, "review", wake.review_prompt(await self._scene(now), soon), "每日复盘")
+        status = await self._run_agent(now, "review", wake.review_prompt(await self._scene(now), soon, self.config.profile_file), "每日复盘")
         self.state.review_tries = 0 if status == "complete" else self.state.review_tries + 1
         if status == "complete" or self.state.review_tries >= 3:
             # 成功才算当天复盘过；连续三次没跑成就放到明天，不反复重试
@@ -406,7 +404,7 @@ class Runtime:
         if self.state.review_day != today or self.state.dream_day == today:
             return
         self.state.dream_day = today
-        _ = await self._run_agent(now, "dream", wake.dream_prompt(await self._scene(now)), "整理记忆")
+        _ = await self._run_agent(now, "dream", wake.dream_prompt(await self._scene(now), self.config.profile_file), "整理记忆")
 
     # 每一轮用自己的会话名：同一次轻唤醒里可能先后跑事件叫醒、待看过目和复盘。
     async def _run_agent(self, now: datetime, kind: str, prompt: str, label: str) -> str:

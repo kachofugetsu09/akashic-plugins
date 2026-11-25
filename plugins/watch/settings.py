@@ -26,6 +26,8 @@ class Config(BaseModel):
     review_at: str = "05:00"
     timezone: str = "Asia/Shanghai"
     memory_file: str = "memory/MEMORY.md"
+    # 主 Agent 对用户这个人的认识，整理记忆时重写；值班员每一批都读。
+    profile_file: str = "memory/topics/user.md"
 
     @field_validator("target")
     @classmethod
