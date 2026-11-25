@@ -70,7 +70,7 @@ FORM = SettingsForm(
         SettingsField("interval_minutes", "值班间隔（分钟）", kind="number", hint="每隔这么久把新事件攒成一批看一次。"),
         SettingsField("watch_models", "值班模型", kind="lines", hint="每行一个模型 ID，按顺序退避：前一个失败或输出不合格就换下一个。留空用默认模型。"),
         SettingsField("model", "主 Agent 模型", kind="model", use=WAKE_MODEL),
-        SettingsField("daily_wakes", "每天最多叫醒几次", kind="number", hint="超出的不丢，放进待看列表。"),
+        SettingsField("daily_wakes", "每天最多叫醒几次", kind="number", hint="超出的不丢，放进待看列表；标成紧急的不受此限。"),
         SettingsField("digest_hours", "待看列表多久看一次（小时）", kind="number",
                       hint="待看列表有新条目、主 Agent 又这么久没醒过时叫它过一眼；0 表示只在被叫醒和复盘时看。"),
         SettingsField("review_at", "每日复盘时间", hint="HH:MM；写 off 表示不复盘。"),

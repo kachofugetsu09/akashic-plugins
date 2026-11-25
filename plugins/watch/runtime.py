@@ -64,6 +64,7 @@ class Runtime:
         self._keys: dict[tuple[str, str], str] = {}
         self._sync_keys(self.log.keys(), self.log.live_ids())
         self._skip_noted = ""
+        self._nightly: asyncio.Task[None] | None = None
 
     def _sync_keys(self, log_keys: dict[tuple[str, str], str], live_ids: set[str]) -> None:
         cleaned_aliases: dict[str, dict[str, str]] = {}
@@ -176,9 +177,10 @@ class Runtime:
         else:
             self.state.orders_checked = now.isoformat()
         # 3. 待看列表定时过一眼、每日复盘与清理
-        await self._digest(now)
-        await self._review(now, orders)
-        await self._dream(now)
+        # 复盘和整理记忆各要十几分钟：放到旁边跑，这段时间照常判事件、照常叫醒，只是不再另起待看过目
+        if self._nightly is None or self._nightly.done():
+            await self._digest(now)
+            self._nightly = await self.ctx.spawn(self._night(now, orders), name="watch-nightly") if self._night_due(now) else None
         log_keys, live_ids = await run_file_io(lambda: self._clean(now))
         async with self._lock:
             self._sync_keys(log_keys, live_ids)
@@ -340,7 +342,12 @@ class Runtime:
 
     async def _wake(self, now: datetime, verdicts: list[Verdict]) -> None:
         recent_wakes = [stamp for stamp in self.state.wakes if datetime.fromisoformat(stamp) > now - timedelta(hours=24)]
-        if len(recent_wakes) >= self.config.daily_wakes:
+        urgent = [verdict for verdict in verdicts if verdict.urgent]
+        if len(recent_wakes) >= self.config.daily_wakes and urgent:
+            # 额度用完也要叫：标了紧急的事不能排到明天；同批其余的照旧放进待看
+            await run_file_io(lambda: _inbox(self.root, now, [verdict for verdict in verdicts if not verdict.urgent], "今日叫醒额度已用完；值班员认为该叫醒"))
+            verdicts = urgent
+        elif len(recent_wakes) >= self.config.daily_wakes:
             # 今日额度用完：不丢，放进待看列表
             logger.warning("[fallback] 今日叫醒额度已用完，叫醒改写进待看列表：额度=%s 事件=%s 条", self.config.daily_wakes, len(verdicts))
             await run_file_io(lambda: _inbox(self.root, now, verdicts, "今日叫醒额度已用完；值班员认为该叫醒"))
@@ -382,11 +389,26 @@ class Runtime:
         self.state.wakes = [*recent_wakes, now.isoformat()]
         _ = await self._run_agent(now, "inbox", wake.digest_prompt(await self._scene(now), fresh), "待看列表过一眼" if fresh else "对话收尾")
 
-    async def _review(self, now: datetime, orders: list[watch_orders.Order]) -> None:
-        if self.config.review_at == "off" or self.state.review_day == f"{now:%Y-%m-%d}":
-            return
+    # 今天的复盘或整理还没跑、而且到点了。
+    def _night_due(self, now: datetime) -> bool:
+        today = f"{now:%Y-%m-%d}"
+        if self.config.review_at == "off" or self.state.dream_day == today:
+            return False
         hour, minute = (int(part) for part in self.config.review_at.split(":"))
-        if (now.hour, now.minute) < (hour, minute):
+        return self.state.review_day == today or (now.hour, now.minute) >= (hour, minute)
+
+    async def _night(self, now: datetime, orders: list[watch_orders.Order]) -> None:
+        try:
+            await self._review(now, orders)
+            await self._dream(datetime.now(self.zone))
+            await self._save()
+        except Exception as error:
+            # 旁路任务的失败不该连累值班：记下来，明天或下一次轻唤醒再试
+            logger.exception("[paused] 每日复盘或整理记忆中途失败")
+            _ = self.ctx.report_incident("watch_agent_failed", f"{type(error).__name__}: {error}"[:500])
+
+    async def _review(self, now: datetime, orders: list[watch_orders.Order]) -> None:
+        if self.state.review_day == f"{now:%Y-%m-%d}":
             return
         soon = [order.raw for order in watch_orders.expiring(orders, now.date())]
         status = await self._run_agent(now, "review", wake.review_prompt(await self._scene(now), soon, self.config.profile_file), "每日复盘")
