@@ -65,6 +65,7 @@ class Runtime:
         self._sync_keys(self.log.keys(), self.log.live_ids())
         self._skip_noted = ""
         self._nightly: asyncio.Task[None] | None = None
+        self._manual: asyncio.Task[None] | None = None
 
     def _sync_keys(self, log_keys: dict[tuple[str, str], str], live_ids: set[str]) -> None:
         cleaned_aliases: dict[str, dict[str, str]] = {}
@@ -178,7 +179,7 @@ class Runtime:
             self.state.orders_checked = now.isoformat()
         # 3. 待看列表定时过一眼、每日复盘与清理
         # 复盘和整理记忆各要十几分钟：放到旁边跑，这段时间照常判事件、照常叫醒，只是不再另起待看过目
-        if self._nightly is None or self._nightly.done():
+        if not self._busy():
             await self._digest(now)
             self._nightly = await self.ctx.spawn(self._night(now, orders), name="watch-nightly") if self._night_due(now) else None
         log_keys, live_ids = await run_file_io(lambda: self._clean(now))
@@ -389,6 +390,33 @@ class Runtime:
         self.state.wakes = [*recent_wakes, now.isoformat()]
         _ = await self._run_agent(now, "inbox", wake.digest_prompt(await self._scene(now), fresh), "待看列表过一眼" if fresh else "对话收尾")
 
+    def _busy(self) -> bool:
+        return any(task is not None and not task.done() for task in (self._nightly, self._manual))
+
+    # 手动入口：现在就跑一轮每日复盘、整理记忆或待看过目，不动每天自动那一次的记号。已有这类回合在跑就不再起。
+    async def kick(self, kind: str) -> str:
+        if self._busy():
+            return "busy"
+        self._manual = await self.ctx.spawn(self._kick(kind), name="watch-manual")
+        return "started"
+
+    async def _kick(self, kind: str) -> None:
+        now = datetime.now(self.zone)
+        try:
+            if kind == "review":
+                orders = await run_file_io(lambda: watch_orders.maintain(self.root, now.date()))
+                soon = [order.raw for order in watch_orders.expiring(orders, now.date())]
+                _ = await self._run_agent(now, "review", wake.review_prompt(await self._scene(now), soon, self.config.profile_file), "每日复盘（手动）")
+            elif kind == "dream":
+                _ = await self._run_agent(now, "dream", wake.dream_prompt(await self._scene(now), self.config.profile_file), "整理记忆（手动）")
+            else:
+                fresh = await run_file_io(lambda: _fresh(self.root / "inbox.md", None))
+                _ = await self._run_agent(now, "inbox", wake.digest_prompt(await self._scene(now), fresh), "待看列表过一眼（手动）")
+            await self._save()
+        except Exception as error:
+            logger.exception("[paused] 手动触发的后台回合中途失败")
+            _ = self.ctx.report_incident("watch_agent_failed", f"{type(error).__name__}: {error}"[:500])
+
     # 今天的复盘或整理还没跑、而且到点了。
     def _night_due(self, now: datetime) -> bool:
         today = f"{now:%Y-%m-%d}"
@@ -435,6 +463,13 @@ class Runtime:
         self.state.last_agent = now.isoformat()
         await self._save()
         memory_before = self.files.text(self.config.memory_file) or ""
+
+        # 开始时先记一行：面板上立刻看得到这一轮在跑，点开能看它走到哪一步；结束时同一个会话再记一行最终状态
+        def begin() -> None:
+            (self.root / "log").mkdir(parents=True, exist_ok=True)
+            with (self.root / "log" / f"{now:%Y-%m-%d}.md").open("a", encoding="utf-8") as file:
+                file.write(f"- {now:%H:%M} {label}：进行中（会话 {session_id}）\n")
+        await run_file_io(begin)
         try:
             status = await wake.run(self.ctx.require(PROGRAMMATIC), session_id, prompt, model_id=selection.model_id,
                                     reasoning_effort=selection.reasoning_effort, timeout=1800)

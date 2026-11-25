@@ -30,13 +30,19 @@ def read_ticks(root: Path, day: date) -> list[dict[str, object]]:
     path = root / "log" / f"{day:%Y-%m-%d}.md"
     ticks: dict[str, dict[str, list[dict[str, object]]]] = {}
     watcher: dict[str, dict[str, ModelStats]] = {}
+    rounds: dict[str, dict[str, object]] = {}
     for text in path.read_text(encoding="utf-8").splitlines() if path.exists() else ():
         if match := _VERDICT.match(text):
             at, event_id, source, title, to, why = match.groups()
             row, item = "verdicts", dict[str, object](id=event_id, source=source, title=title, to=to, why=why or "")
         elif match := _ROUND.match(text):
             at, label, status, session = match.groups()
+            if session in rounds:
+                # 同一个会话先记"进行中"、结束时再记一行：只留一行，状态取后面那次
+                rounds[session]["status"] = status
+                continue
             row, item = "rounds", dict[str, object](label=label, status=status, session=session)
+            rounds[session] = item
         elif match := _MEMORY.match(text):
             at, row, item = match.group(1), "memory", dict[str, object](mark=match.group(2), text=match.group(3))
         elif match := _FAILURE.match(text):

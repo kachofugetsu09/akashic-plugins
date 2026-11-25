@@ -2,7 +2,7 @@ import "./plugin-ui.css";
 
 // 值班面板：只认识“来源”“事件”“回合”，不认识任何一种具体的来源；多一个来源就多一行，画法都一样。
 const ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>';
-const STATUS = { complete: "做完了", timeout: "超时", failed: "失败", error: "出错", cancelled: "被取消" };
+const STATUS = { "进行中": "进行中…", complete: "做完了", timeout: "超时", failed: "失败", error: "出错", cancelled: "被取消" };
 const status = (round) => STATUS[round.status] ?? round.status;
 const FILES = [["WATCH.md", "嘱托"], ["notes.md", "便签"], ["inbox.md", "待看"]];
 
@@ -76,7 +76,7 @@ function compactView(data, panel) {
 // 一个回合展开后的内容：它收尾时的交代、改了记忆的哪几行、当时各来源报的状态、一步一步做了什么。
 function roundBody(data, round, query) {
   const steps = h("ol", "watch-steps", null, [h("li", "watch-why", "正在读取…")]);
-  query("round", { session: round.session }, { cache: "memory" }).then((result) => {
+  query("round", { session: round.session }, { cache: round.status === "进行中" ? "none" : "memory" }).then((result) => {
     steps.replaceChildren(...result.steps.map((step) => step.kind === "text"
       ? h("li", "watch-said", step.text)
       : h("li", null, null, [h("code", null, step.tool), document.createTextNode(step.text), step.result ? h("small", null, step.result) : null])));
@@ -292,7 +292,7 @@ function usageView(data) {
 }
 
 function mount(host, context) {
-  const state = { data: null, tab: "today", raw: false, redraw: () => {}, error: "" };
+  const state = { data: null, tab: "today", raw: false, redraw: () => {}, error: "", note: "", kicking: false, timer: 0 };
   const shift = (days) => { const day = new Date(`${state.data.date}T00:00:00Z`); day.setUTCDate(day.getUTCDate() + days); load(day.toISOString().slice(0, 10)); };
   function draw() {
     if (state.error) return host.replaceChildren(h("p", "watch-why", state.error));
@@ -307,7 +307,13 @@ function mount(host, context) {
       return node;
     });
     state.redraw = draw;
-    const body = state.tab === "today" ? [h("p", "watch-lede", lede(data)), ledgerView(data, context.query), section("用量", "", [usageView(data)])]
+    const running = allRounds(data).some((round) => round.status === "进行中");
+    const runs = data.date === data.today ? h("div", "watch-runs", null, [["review", "现在复盘"], ["dream", "整理记忆"], ["inbox", "过一眼待看"]].map(([kind, label]) => {
+      const node = button("watch-run", label, () => kick(kind));
+      node.disabled = running || state.kicking;
+      return node;
+    }).concat(state.note ? [h("span", "watch-why", state.note)] : [])) : null;
+    const body = state.tab === "today" ? [h("p", "watch-lede", lede(data)), runs, ledgerView(data, context.query), section("用量", "", [usageView(data)])]
       : state.tab === "WATCH.md" ? ordersView(data, state)
       : state.tab === "notes.md" ? notesView(data.files["notes.md"])
       : [h("pre", "watch-file", data.files[state.tab] || "（空）")];
@@ -323,11 +329,27 @@ function mount(host, context) {
       state.error = `读取失败：${error instanceof Error ? error.message : error}`;
     }
     draw();
+    // 有回合在跑、而且没有哪一行被点开在看时，隔几秒重读一次，让"进行中"自己变成结果
+    clearTimeout(state.timer);
+    if (state.data?.date === state.data?.today && allRounds(state.data ?? { ticks: [] }).some((round) => round.status === "进行中")) {
+      state.timer = setTimeout(() => { if (!host.querySelector("details.watch-r[open]")) void load(); else state.timer = setTimeout(() => void load(), 15000); }, 6000);
+    }
+  }
+  async function kick(kind) {
+    state.kicking = true; state.note = ""; draw();
+    try {
+      const result = await context.query("run", { kind }, { cache: "none" });
+      state.note = result.status === "busy" ? "已经有一轮在跑，等它结束再试" : "已开始，下面会出现一行「进行中」";
+    } catch (error) {
+      state.note = `没有启动：${error instanceof Error ? error.message : error}`;
+    }
+    state.kicking = false;
+    await load();
   }
   const stops = [context.onInvalidate(draw), context.onShown(() => load(state.data?.date === state.data?.today ? undefined : state.data?.date))];
   draw();
   void load();
-  return () => { for (const stop of stops) stop(); host.replaceChildren(); };
+  return () => { clearTimeout(state.timer); for (const stop of stops) stop(); host.replaceChildren(); };
 }
 
 const panel = {
