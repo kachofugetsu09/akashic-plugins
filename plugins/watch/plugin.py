@@ -39,7 +39,7 @@ POINTER = (
 
 api_version = 3
 name = "watch"
-version = "1.13.0"
+version = "1.14.0"
 desc = "值班：便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；主 Agent 在后台醒来后自己决定做什么、说不说话"
 inject = (PLUGIN_CONFIG, CHAT_MODELS, MODEL_CATALOG, MESSAGE_CATALOG, PROGRAMMATIC, PROCESSES)
 workspace_roots = ("watch",)
@@ -130,6 +130,11 @@ async def apply(ctx: Context) -> None:
                 return await run_file_io(
                     lambda: panel.read_log_verdicts(runtime.root, day, start=start, end=end, offset=offset, limit=limit)
                 )
+            if method == "run":
+                kind = str(payload.get("kind") or "")
+                if kind not in ("review", "dream", "inbox") or not config.target:
+                    raise PluginUiRpcInvalidRequest("kind 只能是 review、dream、inbox，并且要先配置主对话")
+                return {"status": await runtime.kick(kind)}
             if method != "day":
                 raise PluginUiRpcInvalidRequest(f"不支持的查询：{method}")
             day = panel.parse_day(payload, now.date())

@@ -89,3 +89,7 @@
   .watch-more > div > :nth-child(2) { display: none; }
   .watch-usage-bar { grid-template-columns: 1fr; }
 }
+.watch-runs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; }
+.watch-run { padding: 4px 10px; border: 1px solid var(--ak-rule-subtle); border-radius: var(--ak-radius-sm); background: none; color: inherit; font: inherit; cursor: pointer; }
+.watch-run:hover:not(:disabled) { background: var(--ak-paper-raised); }
+.watch-run:disabled { opacity: 0.35; cursor: default; }
