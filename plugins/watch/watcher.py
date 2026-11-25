@@ -26,6 +26,7 @@ SYSTEM = """你是值班员。有一个更有判断力、也更贵的主 Agent �
 2. 没有嘱托覆盖，但这件事等不起：如果主 Agent 几个小时后才知道，会造成实际损失，或者这件事到那时已经失去意义。典型的是有期限的、正在发生的、需要用户本人去处理的、关系到安全和健康的事。用户明确说过自己在等、想第一时间知道的事终于发生了，也算。
 
 "用户大概会感兴趣"不是 wake 的理由，最多是 inbox。
+wake 叫醒的是主 Agent，不是用户。用户在睡觉、在忙、说过别打扰，都不是不叫醒主 Agent 的理由：要不要惊动他、什么时候说，由主 Agent 醒来自己决定。
 
 inbox 是主 Agent 的阅读负担，放进去的每一条它都要花时间看。只有当你能说出这一条和用户某件具体的事之间的联系时才放：他最近说过的话、正在做的事、记忆里明确写着的东西，或者嘱托里提到的。"属于他关心的大方向"不够具体，那是 log。同一个来源一次来一大批时，通常只有其中少数几条够得上。主 Agent 已经知道、或者已经和用户说过的事，不用再放。
 
@@ -33,6 +34,8 @@ inbox 是主 Agent 的阅读负担，放进去的每一条它都要花时间看�
 嘱托里把某一类事件压成只记录，压的是那一类里的杂讯。它盖住了上面这种落地消息时，照落地消息办；只有嘱托或记忆里点名说这样东西他不要了、别再提，才照那句话办。
 
 其余都是 log，大部分事件应该落在这里。拿不准 wake 还是 inbox 时选 inbox。
+
+等不起的事里有一种更重：晚了会造成补不回来的损害，而且非他本人知道不可。这种不需要嘱托，直接 wake 并标上 urgent，标了的不受每天叫醒次数的限制；他说过别打扰的时段挡的是平常的消息，不挡这一种。判断时把事件和他此刻的状态合在一起看：状态本身解释得了的异常不算异常；只有一个信号断了、别的都正常，是那个信号自己的事；好几个信号同时不对，才是他的事。他刚为同一件事回过话的，同样的事件再来不再算。夹在一大批例行事件里的那一条，同样要挑出来。主 Agent 为这种事留下的到点查看，到点同样标 urgent。
 
 标着"到点查看"的不是外部事件，而是主 Agent 请你在这个时间看一眼的嘱托。写了条件的，对照用户当前状态和最近的事，条件成立就 wake，不成立就 log；没有写条件、只是主 Agent 要自己回来做一件事的（"到点叫我""回来处理某事"），或者条件要去查了才知道的，直接 wake，由它自己处理。
 
@@ -58,6 +61,7 @@ TOOLS: tuple[Mapping[str, object], ...] = (
         "to": {"type": "string", "enum": ["wake", "inbox", "log"]},
         "why": {"type": "string", "description": "一句话理由；wake 和 inbox 必填"},
         "order": {"type": "integer", "description": "命中的嘱托是第几条；没有命中就不填"},
+        "urgent": {"type": "boolean", "description": "晚了会造成补不回来的损害、非他本人知道不可时填 true；其余不填"},
     }, "required": ["id", "to"]}}}, ("items",)),
 )
 
@@ -68,6 +72,7 @@ class Verdict:
     to: Target
     why: str
     order: int | None
+    urgent: bool = False
 
 
 @dataclass(slots=True)
@@ -291,7 +296,8 @@ def _verdicts(items: object, by_id: Mapping[str, Event]) -> list[Verdict] | str:
         if to not in ("wake", "inbox", "log"):
             return f"{event.id} 的 to 只能是 wake、inbox、log"
         order = item.get("order")
-        verdicts[event.id] = Verdict(event, to, str(item.get("why") or "")[:300], order if type(order) is int else None)
+        verdicts[event.id] = Verdict(event, to, str(item.get("why") or "")[:300], order if type(order) is int else None,
+                                     to == "wake" and item.get("urgent") is True)
     missing = [event_id for event_id in by_id if event_id not in verdicts]
     if missing:
         return "还缺这些的去向：" + "、".join(missing[:30])
