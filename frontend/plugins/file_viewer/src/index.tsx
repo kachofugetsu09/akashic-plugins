@@ -1278,6 +1278,7 @@ function FileManagerApp({
       session,
       source: sourceLabel.slice(0, 200),
       text: `\`\`\`\n${snippet.slice(0, 7800)}\n\`\`\``,
+      anchor: { path, ...(selectedLines ? { line: selectedLines.start } : {}) },
     });
     if (status === "inserted") {
       setQuoteFeedback(true);
@@ -2172,11 +2173,13 @@ function FileManagerApp({
                             format={detectDocumentFormat(path)!}
                             anchor={richAnchor}
                             anchorNonce={richAnchorNonce}
-                            onQuote={(sourceLabel, text) => {
+                            onQuote={(sourceLabel, text, extra) => {
                               const status = view.quote?.({
                                 session,
                                 source: sourceLabel.slice(0, 200),
                                 text: text.slice(0, 7800),
+                                ...(extra?.image ? { image: extra.image } : {}),
+                                ...(extra?.anchor ? { anchor: extra.anchor } : {}),
                               });
                               if (status === "inserted") {
                                 setQuoteFeedback(true);

@@ -2,6 +2,8 @@ import {
   READER_CHANNEL,
   type DocumentAnchor,
   type DocumentFormat,
+  type QuoteAnchorPayload,
+  type QuoteImagePayload,
   type ReaderFromFrame,
   type ReaderToFrame,
 } from "./contract";
@@ -13,6 +15,8 @@ type PendingQuote = {
   source: string;
   text: string;
   rawCopy: string;
+  image?: QuoteImagePayload;
+  anchor?: QuoteAnchorPayload;
 };
 
 const ICON = {
@@ -301,6 +305,7 @@ class DocumentReaderApp {
         source: `文档 · ${this.currentPath}${page ? `#p.${page}` : ""}`,
         text: `> [${label}]\n>\n> ${text.slice(0, 6000).replace(/\n/g, "\n> ")}`,
         rawCopy: text,
+        anchor: { path: this.currentPath, ...(page ? { page } : {}) },
       });
     });
 
@@ -344,14 +349,22 @@ class DocumentReaderApp {
         return;
       }
       const bboxStr = captured.bbox.join(", ");
-      const header = `[${basename(this.currentPath)} · p.${captured.page} · 区域 (${bboxStr})]`;
+      const base = basename(this.currentPath);
+      const stem = base.replace(/\.[^.]+$/u, "") || "page";
+      const image: QuoteImagePayload | undefined = captured.imageDataUrl
+        ? { dataUrl: captured.imageDataUrl, filename: `${stem}-p${captured.page}.png`, mediaType: "image/png" }
+        : undefined;
       const body = captured.text
-        ? `> ${header}\n>\n> ${captured.text.slice(0, 4000)}`
-        : `> ${header}\n> （选区包含图表或公式，无内嵌纯文本，请结合第 ${captured.page} 页原图查看）`;
+        ? `> [${base} · p.${captured.page}]\n>\n> ${captured.text.slice(0, 4000)}`
+        : image
+          ? ""
+          : `> [${base} · p.${captured.page} · 区域 (${bboxStr})]`;
       this.showPopoverAt(rect.left + rect.width / 2, rect.top - 42, {
         source: `文档区域 · ${this.currentPath}#p.${captured.page}`,
         text: body,
-        rawCopy: captured.text || header,
+        rawCopy: captured.text || `${base} · p.${captured.page}`,
+        image,
+        anchor: { path: this.currentPath, page: captured.page },
       });
     });
 
@@ -503,6 +516,7 @@ class DocumentReaderApp {
       type: "quote",
       source: `文档 · ${tag}`.slice(0, 200),
       text: text.slice(0, 7800),
+      anchor: { path: this.currentPath, ...(this.currentFormat === "xlsx" && this.ooxmlSelection.label ? { range: this.ooxmlSelection.label } : {}) },
     });
     this.showToast(`已引用 ${this.ooxmlSelection.label || "选区"} 到对话`);
   }
@@ -609,13 +623,17 @@ class DocumentReaderApp {
     if (!this.pendingQuote) return;
     const text =
       mode === "explain"
-        ? `${this.pendingQuote.text}\n\n请帮我解释上面这段内容。`
+        ? this.pendingQuote.text
+          ? `${this.pendingQuote.text}\n\n请帮我解释上面这段内容。`
+          : "请帮我解释上面框选的区域内容。"
         : this.pendingQuote.text;
     sendToParent({
       channel: READER_CHANNEL,
       type: "quote",
       source: this.pendingQuote.source.slice(0, 200),
       text: text.slice(0, 7800),
+      ...(this.pendingQuote.image ? { image: this.pendingQuote.image } : {}),
+      ...(this.pendingQuote.anchor ? { anchor: this.pendingQuote.anchor } : {}),
     });
     this.hidePopover();
     this.setSnipMode(false);

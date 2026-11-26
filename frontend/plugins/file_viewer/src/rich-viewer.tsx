@@ -4,6 +4,8 @@ import {
   READER_CHANNEL,
   type DocumentAnchor,
   type DocumentFormat,
+  type QuoteAnchorPayload,
+  type QuoteImagePayload,
   type ReaderFromFrame,
   type ReaderToFrame,
 } from "../viewer/contract";
@@ -86,7 +88,7 @@ type RichDocumentFrameProps = {
   format: DocumentFormat;
   anchor: DocumentAnchor | null;
   anchorNonce: number;
-  onQuote: (source: string, text: string) => void;
+  onQuote: (source: string, text: string, extra?: { image?: QuoteImagePayload; anchor?: QuoteAnchorPayload }) => void;
   onStateChange: (statusText: string) => void;
 };
 
@@ -157,7 +159,7 @@ export function RichDocumentFrame({
         }
       } else if (msg.type === "quote") {
         if (typeof msg.source === "string" && typeof msg.text === "string" && loadedKeyRef.current.startsWith(`${activeSessionRef.current}\0`)) {
-          onQuoteRef.current(msg.source, msg.text);
+          onQuoteRef.current(msg.source, msg.text, { image: msg.image, anchor: msg.anchor });
         }
       } else if (msg.type === "state") {
         if (msg.sheet) {

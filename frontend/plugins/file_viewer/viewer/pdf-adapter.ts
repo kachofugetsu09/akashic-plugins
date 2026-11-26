@@ -32,6 +32,7 @@ export type PdfRegionCapture = {
   page: number;
   bbox: [number, number, number, number];
   text: string;
+  imageDataUrl?: string;
 };
 
 type PageSlot = {
@@ -61,6 +62,7 @@ export class PdfAdapter {
   private searchGen = 0;
   private activeRenders = 0;
   private renderQueue: number[] = [];
+  private zoomLockUntil = 0;
   private disposed = false;
 
   constructor(
@@ -116,15 +118,32 @@ export class PdfAdapter {
 
   async setZoomFactor(relativeFactor: number): Promise<number> {
     const clamped = Math.max(0.6, Math.min(2.4, relativeFactor));
-    this.scale = this.computeFitWidthScale() * clamped;
     const keepPage = this.currentPage;
+    const anchorSlot = this.slots[keepPage - 1];
+    let offsetRatio = 0;
+    if (anchorSlot && anchorSlot.el.offsetHeight > 0) {
+      offsetRatio = Math.max(
+        0,
+        Math.min(1, (this.stageEl.scrollTop - anchorSlot.el.offsetTop) / anchorSlot.el.offsetHeight)
+      );
+    }
+
+    // 缩放期间锁定 observer，避免页槽高度变化瞬间把 currentPage 误改到别的页
+    this.zoomLockUntil = performance.now() + 420;
+    this.scale = this.computeFitWidthScale() * clamped;
     this.renderQueue = [];
     for (const slot of this.slots) {
       this.cancelSlot(slot);
       slot.rendered = false;
       this.applySlotSize(slot);
     }
-    await this.goToPage(keepPage, false);
+
+    if (anchorSlot) {
+      this.stageEl.scrollTop = Math.round(anchorSlot.el.offsetTop + offsetRatio * anchorSlot.el.offsetHeight);
+      this.currentPage = keepPage;
+      this.callbacks.onPageChange(keepPage, this.pageCount);
+      await this.renderSlotNow(anchorSlot);
+    }
     this.renderVisibleWindow(keepPage);
     return Math.round(clamped * 100);
   }
@@ -248,10 +267,39 @@ export class PdfAdapter {
         if (t) picked.push(t);
       }
     }
+
+    // 从当前页高分 Canvas 真实裁剪框选区域为 PNG，供聊天输入框作为多模态图片附件发送
+    let imageDataUrl: string | undefined;
+    if (bestSlot.canvas.width > 0 && bestSlot.canvas.height > 0) {
+      try {
+        const sx = Math.max(0, Math.floor(bbox[0] * bestSlot.canvas.width));
+        const sy = Math.max(0, Math.floor(bbox[1] * bestSlot.canvas.height));
+        const sw = Math.max(1, Math.min(bestSlot.canvas.width - sx, Math.ceil((bbox[2] - bbox[0]) * bestSlot.canvas.width)));
+        const sh = Math.max(1, Math.min(bestSlot.canvas.height - sy, Math.ceil((bbox[3] - bbox[1]) * bestSlot.canvas.height)));
+        const maxEdge = 1440;
+        const downscale = Math.min(1, maxEdge / Math.max(sw, sh));
+        const dw = Math.max(1, Math.round(sw * downscale));
+        const dh = Math.max(1, Math.round(sh * downscale));
+        const crop = document.createElement("canvas");
+        crop.width = dw;
+        crop.height = dh;
+        const cctx = crop.getContext("2d");
+        if (cctx) {
+          cctx.fillStyle = "#ffffff";
+          cctx.fillRect(0, 0, dw, dh);
+          cctx.drawImage(bestSlot.canvas, sx, sy, sw, sh, 0, 0, dw, dh);
+          imageDataUrl = crop.toDataURL("image/png");
+        }
+      } catch {
+        // 裁剪失败时降级为纯坐标引用
+      }
+    }
+
     return {
       page: bestSlot.pageNumber,
       bbox,
       text: picked.join(" ").replace(/\s+/g, " ").trim(),
+      imageDataUrl,
     };
   }
 
@@ -339,7 +387,7 @@ export class PdfAdapter {
             }
           }
         }
-        if (topVisible && topVisible.page !== this.currentPage) {
+        if (performance.now() >= this.zoomLockUntil && topVisible && topVisible.page !== this.currentPage) {
           this.currentPage = topVisible.page;
           this.callbacks.onPageChange(this.currentPage, this.pageCount);
           this.evictFarPages(this.currentPage);
