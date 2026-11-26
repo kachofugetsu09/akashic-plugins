@@ -13,7 +13,7 @@ from plugins.host_execution.contract import PROCESSES
 from plugins.ledger.contract import Message
 from plugins.ledger.contract import MESSAGE_CATALOG
 from plugins.models.contract import CHAT_MODELS, MODEL_CALL_STATS, MODEL_CATALOG
-from plugins.plugin_settings.contract import SETTINGS_FORMS, declare_settings
+from plugins.plugin_settings.contract import SETTINGS_FORMS
 from plugins.programmatic.contract import PROGRAMMATIC
 from plugins.tools.contract import TOOL_DISPLAY
 from plugins.ui.contract import UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest
@@ -22,7 +22,7 @@ from plugins.userinformation.contract import USER_INFORMATION
 from . import panel
 from .contract import WATCH_EVENTS
 from .runtime import Runtime, count_items, count_notes
-from .settings import FORM, Config
+from .settings import Config, register_settings, watch_enabled_in
 
 POINTER = (
     "你在后台留着 {notes} 行便签（watch/notes.md），待看里有 {inbox} 条（watch/inbox.md）。那是你自己的事，不是这次对话的议程。你在后台各轮去过哪、留下了什么，系统记在 watch/trail.md，他问起你背地里做了什么就照它说。"
@@ -67,17 +67,18 @@ class Current:
 async def apply(ctx: Context) -> None:
     """事件入口始终可用；只有配置了主对话，值班循环才启动。"""
     config = Config.model_validate(ctx.config)
+    active = watch_enabled_in(ctx.config) and bool(config.target)
     runtime = Runtime(ctx, config)
     _ = await ctx.provide(WATCH_EVENTS, runtime)
     _ = await ctx.inject((SETTINGS_FORMS, PLUGIN_CONFIG, MODEL_CATALOG),
-                         lambda child: declare_settings(child, Config, FORM), name="settings")
+                         register_settings, name="settings")
     # 机制说明是普通技能，主 Agent 需要时用 load_skill 读取。
     _ = await ctx.inject((INSTALLED_ASSETS,), lambda child: child.require(INSTALLED_ASSETS).register(child, "skills", "skills"),
                          name="skills")
 
     # 用户来主对话聊天时给主 Agent 的一段提醒：后台攒下的东西不是这次对话的议程，先回应他这句话。
     async def pointer(snapshot: tuple[Message, ...], _source: str) -> dict[str, object]:
-        if not snapshot or snapshot[-1].session_id != config.target:
+        if not active or not snapshot or snapshot[-1].session_id != config.target:
             return {}
         notes, inbox = count_notes(runtime.root / "notes.md"), count_items(runtime.root / "inbox.md")
         return {"reminders": ({"name": "watch", "priority": 300, "replay": False, "text": POINTER.format(notes=notes, inbox=inbox)},)}
@@ -91,7 +92,7 @@ async def apply(ctx: Context) -> None:
 
     async def start(_event: object) -> None:
         nonlocal watcher
-        if config.enabled and config.target:
+        if active:
             watcher = await ctx.spawn(runtime.follow(), name="watch")
 
     async def stop(_event: object) -> None:
