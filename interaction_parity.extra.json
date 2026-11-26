@@ -1,6 +1,8 @@
 {
   "version": 2,
   "explicit_exemption": {
+    "http:design:GET /api/dashboard/design/fonts": {"kind": "view_only", "reason": "画布编辑器回退字体的 Google Fonts 代取字节，只供浏览器渲染；不是用户动作", "decision": ""},
+    "http:design:WEBSOCKET /api/dashboard/design/live": {"kind": "transport", "reason": "向开着的画布推送新修订与 Agent 正在编辑的文档，只出不进的通知通道", "decision": ""},
     "http:terminal:WEBSOCKET /api/dashboard/terminal/attach": {"kind": "user_only", "reason": "交互终端的输入与输出是用户本人的 shell，不进入 Agent 上下文，也不让 Agent 代为键入", "decision": "ADR-0122"}
   },
   "agent_only": {},
@@ -19,14 +21,6 @@
     "http:computer:WEBSOCKET /api/dashboard/computer/events",
     "http:computer:WEBSOCKET /api/dashboard/computer/signaling",
     "http:computer:WEBSOCKET /api/dashboard/computer/stream",
-    "http:design:GET /api/dashboard/design/documents",
-    "http:design:GET /api/dashboard/design/documents/{document}",
-    "http:design:GET /api/dashboard/design/documents/{document}/preview",
-    "http:design:GET /api/dashboard/design/fonts",
-    "http:design:PATCH /api/dashboard/design/documents/{document}",
-    "http:design:POST /api/dashboard/design/documents",
-    "http:design:PUT /api/dashboard/design/documents/{document}",
-    "http:design:WEBSOCKET /api/dashboard/design/live",
     "http:file_viewer:GET /api/dashboard/file_viewer/document",
     "http:file_viewer:GET /api/dashboard/file_viewer/files",
     "http:file_viewer:GET /api/dashboard/file_viewer/raw",

@@ -9,6 +9,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from agent.plugin_composition import ServiceKey
 
+from .store import DesignDocument, DesignStore
+
 MAX_MESSAGE = 64 * 1024
 
 
@@ -57,6 +59,14 @@ class DesignLive:
         for canvas in list(self._canvases.get(session, [])):
             with suppress(RuntimeError, WebSocketDisconnect):
                 await canvas.socket.send_text(text)
+
+
+# 保存一份新修订并通知同一会话里开着的画布：浏览器保存与 self 写入走同一处。
+async def save_document(store: DesignStore, live: DesignLive, session: str, document: str,
+                        data: bytes, *, base: int) -> DesignDocument:
+    saved = await store.write(session, document, data, base=base)
+    await live.changed(session, saved.id, saved.revision)
+    return saved
 
 
 DESIGN_LIVE = ServiceKey[DesignLive]("design.live.v1")

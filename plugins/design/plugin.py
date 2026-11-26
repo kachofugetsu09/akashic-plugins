@@ -2,11 +2,13 @@
 from agent.plugin_composition import Context
 from plugins.ui.contract import UI
 
+from plugins.operations.contract import OPERATIONS_V1
 from plugins.tools.contract import TOOLS
 from plugins.working_directory.contract import WORKING_DIRECTORY
 
 from . import dashboard
 from .live import DESIGN_LIVE, DesignLive
+from .operations import register_operations
 from .store import DESIGN_STORE, DesignStore
 from .tools import register_tools
 
@@ -18,8 +20,9 @@ inject = (TOOLS, WORKING_DIRECTORY)
 
 
 async def apply(ctx: Context) -> None:
-    _ = await ctx.provide(DESIGN_STORE, DesignStore(ctx.runtime.data_dir / "documents"))
-    _ = await ctx.provide(DESIGN_LIVE, DesignLive())
+    store, live = DesignStore(ctx.runtime.data_dir / "documents"), DesignLive()
+    _ = await ctx.provide(DESIGN_STORE, store)
+    _ = await ctx.provide(DESIGN_LIVE, live)
     await register_tools(ctx)
 
     # UI 缺席时只是没有浏览器入口，文档照常保存在本插件的数据目录里。
@@ -34,3 +37,9 @@ async def apply(ctx: Context) -> None:
         )
 
     _ = await ctx.inject((UI, DESIGN_STORE, DESIGN_LIVE), register_ui, name="design-ui")
+
+    # 没有 operations 插件时只是 self 里没有设计文档命令。
+    async def register_ops(child: Context) -> None:
+        await register_operations(child, store, live)
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")
