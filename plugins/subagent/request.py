@@ -23,6 +23,8 @@ EXCLUDED_ALWAYS_TOOLS: frozenset[str] = frozenset({
     "deploy_akashic",
     "agent_restart",
     "load_tools",
+    # self 能调插件安装、部署等上面已排除的能力；子任务的权限边界未落到 operation 粒度前一律不给。
+    "self",
 })
 
 DELEGATION_TOOLS: frozenset[str] = frozenset({"spawn", "spawn_manage", "subagent_send", "subagent_read"})
@@ -51,8 +53,6 @@ READ_ONLY_EXCLUDED_TOOLS: frozenset[str] = frozenset({
     "spawn",
     "spawn_manage",
     "subagent_send",
-    # Self-CLI 单工具把整套写操作藏在中性名字下；只读子任务整体不给，后续再开放父授权派生的只读集合。
-    "self",
 }) | EXCLUDED_ALWAYS_TOOLS
 
 _READ_ONLY_DESIGN_TOOLS: frozenset[str] = frozenset({"design_get_jsx", "design_describe"})

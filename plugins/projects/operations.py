@@ -100,14 +100,15 @@ class ProjectCreation:
     async def create_with_extensions(
         self, project_id: str, name: str, directory: str | None, extensions: Mapping[str, object],
     ) -> dict[str, object]:
-        argv = ["project", "create", "--project_id", project_id, "--name", name]
+        # 每个参数写成单个 --k=v：以 -- 开头的名称或目录不会被当成选项。
+        argv = ["project", "create", f"--project_id={project_id}", f"--name={name}"]
         if directory is not None:
-            argv += ["--directory", directory]
+            argv.append(f"--directory={directory}")
         for namespace, values in extensions.items():
             if not isinstance(values, Mapping):
                 raise PluginUiRpcInvalidRequest(f"附加设置 {namespace} 格式无效")
             for key, value in values.items():
-                argv += [f"--{namespace}.{key}", _flag_value(value)]
+                argv.append(f"--{namespace}.{key}={_flag_value(value)}")
         with self._ctx.borrow(OPERATIONS_V1) as operations:
             if operations is None:
                 raise PluginUiRpcInvalidRequest("当前组合缺少 operations，附加设置无法与项目一起提交")

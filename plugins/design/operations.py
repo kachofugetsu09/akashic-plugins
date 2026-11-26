@@ -6,7 +6,7 @@ import binascii
 from dataclasses import asdict
 
 from agent.plugin_composition import Context
-from plugins.operations.contract import OPERATIONS_V1, OperationRequest, OperationResult, OperationSpec, OptionSpec
+from plugins.operations.contract import session_of, OPERATIONS_V1, OperationRequest, OperationResult, OperationSpec, OptionSpec
 
 from .live import DesignLive, save_document
 from .store import DOCUMENT_ID, DesignStore, DesignStoreError, RevisionConflict
@@ -16,10 +16,8 @@ _DOCUMENT = OptionSpec("document", "设计文档 ID（来自 design list）", re
 
 
 def _session(req: OperationRequest) -> str:
-    value = req.args.get("session") or req.session_id
-    if not isinstance(value, str) or not 0 < len(value) <= 512:
-        raise ValueError("需要 --session 或在会话里调用")
-    return value
+    # 用户可指定任意会话；助手只能作用于自己所在的会话。
+    return session_of(req)
 
 
 def _document(req: OperationRequest) -> str:

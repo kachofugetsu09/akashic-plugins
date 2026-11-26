@@ -115,6 +115,9 @@ class ScopePolicies:
     ) -> Callable[[OwnerTransaction], LearnPolicy]:
         if learn not in LEARN_POLICIES or type(recall) is not bool:
             raise ValueError("Akasha 记忆策略无效")
+        # 界面只能表示「关闭召回 = 不使用记忆」；独立设置与随创建设置同守这一约束。
+        if not recall and learn != "off":
+            raise ValueError("关闭召回只能与 learn=off 一起使用")
         _ = SessionAttributes(scope=((dimension, value),))
         key = _policy_key(dimension, value)
 

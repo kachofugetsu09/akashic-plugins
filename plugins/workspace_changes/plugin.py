@@ -10,6 +10,7 @@ from plugins.turn_projection.contract import TURN_PROJECTION
 from plugins.ui.contract import UI, UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest
 
 from plugins.operations.contract import (
+    session_of,
     OPERATIONS_V1, OperationRequest, OperationResult, OperationSpec, OptionSpec, QueryHandler, QueryMirror,
     register_query_mirrors,
 )
@@ -76,10 +77,8 @@ def summarize(turn: dict[str, object]) -> dict[str, object]:
 
 
 def _session(req: OperationRequest) -> str:
-    value = req.args.get("session") or req.session_id
-    if not isinstance(value, str) or not value:
-        raise ValueError("需要 --session 或在会话内调用")
-    return value
+    # 用户可指定任意会话；助手只能作用于自己所在的会话。
+    return session_of(req)
 
 
 def _result(found: dict[str, object]) -> OperationResult:
