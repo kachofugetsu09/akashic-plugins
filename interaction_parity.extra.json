@@ -3,6 +3,8 @@
   "explicit_exemption": {
     "http:design:GET /api/dashboard/design/fonts": {"kind": "view_only", "reason": "画布编辑器回退字体的 Google Fonts 代取字节，只供浏览器渲染；不是用户动作", "decision": ""},
     "http:design:WEBSOCKET /api/dashboard/design/live": {"kind": "transport", "reason": "向开着的画布推送新修订与 Agent 正在编辑的文档，只出不进的通知通道", "decision": ""},
+    "http:file_viewer:GET /api/dashboard/file_viewer/raw": {"kind": "view_only", "reason": "给浏览器渲染 PDF/Office/图片与下载用的原始字节流；可读的文本内容由 file_viewer.read 镜像", "decision": ""},
+    "http:file_viewer:WEBSOCKET /api/dashboard/file_viewer/live": {"kind": "transport", "reason": "向开着的文件标签推送 Agent 打开的文件与定位锚点，只出不进的通知通道", "decision": ""},
     "http:terminal:WEBSOCKET /api/dashboard/terminal/attach": {"kind": "user_only", "reason": "交互终端的输入与输出是用户本人的 shell，不进入 Agent 上下文，也不让 Agent 代为键入", "decision": "ADR-0122"}
   },
   "agent_only": {},
@@ -21,10 +23,6 @@
     "http:computer:WEBSOCKET /api/dashboard/computer/events",
     "http:computer:WEBSOCKET /api/dashboard/computer/signaling",
     "http:computer:WEBSOCKET /api/dashboard/computer/stream",
-    "http:file_viewer:GET /api/dashboard/file_viewer/document",
-    "http:file_viewer:GET /api/dashboard/file_viewer/files",
-    "http:file_viewer:GET /api/dashboard/file_viewer/raw",
-    "http:file_viewer:WEBSOCKET /api/dashboard/file_viewer/live",
     "http:phone_assist:GET /api/phone-assist/health",
     "http:phone_assist:GET /api/phone-assist/history/{session_id}",
     "http:phone_assist:GET /api/phone-assist/invoke/{invoke_id}",
