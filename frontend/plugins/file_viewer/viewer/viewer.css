@@ -1,0 +1,469 @@
+/* 文档阅读器 iframe 样式：承接 Akashic 纸感主题 tokens，极简窄栏阅读 + 悬浮控制药丸 + 划词/框选引用。 */
+:root {
+  --dr-bg: var(--ak-paper-canvas, #f4f2ec);
+  --dr-surface: var(--ak-paper-sheet, #ffffff);
+  --dr-ink: var(--ak-ink-primary, #1d1c19);
+  --dr-ink-2: var(--ak-ink-secondary, #5a574f);
+  --dr-muted: var(--ak-ink-muted, #8a867c);
+  --dr-rule: var(--ak-rule-subtle, rgba(29, 28, 25, 0.1));
+  --dr-accent: var(--ak-color-action-primary, #2c6e49);
+  --dr-accent-soft: color-mix(in oklab, var(--dr-accent) 13%, transparent);
+  --dr-pill-bg: color-mix(in oklab, var(--dr-surface) 90%, transparent);
+  --dr-page-shadow: var(--ak-elevation-raised);
+  --dr-float-shadow: var(--ak-elevation-float);
+  --dr-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-theme="dark"] {
+  --dr-bg: var(--ak-paper-canvas, #171816);
+  --dr-surface: var(--ak-paper-sheet, #20221f);
+  --dr-ink: var(--ak-ink-primary, #e7e5de);
+  --dr-ink-2: var(--ak-ink-secondary, #a8a59b);
+  --dr-muted: var(--ak-ink-muted, #7d7a72);
+  --dr-rule: rgba(255, 255, 255, 0.1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #reader-root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--dr-bg);
+  color: var(--dr-ink);
+  font-family: var(--ak-type-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dr-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--dr-bg);
+}
+
+.dr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--ak-radius-sm);
+  background: transparent;
+  color: var(--dr-ink-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 110ms ease;
+}
+
+.dr-btn:hover { background: color-mix(in oklab, var(--dr-ink) 8%, transparent); color: var(--dr-ink); }
+.dr-btn:active { transform: scale(0.96); }
+.dr-btn.is-active { background: var(--dr-accent); color: #ffffff; }
+.dr-btn.is-icon { width: 28px; padding: 0; }
+.dr-btn:disabled { opacity: 0.38; cursor: default; }
+
+/* Agent 导览轻提示条 */
+.dr-note-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  border: 1px solid var(--dr-rule);
+  border-radius: var(--ak-radius-full);
+  background: var(--dr-pill-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--dr-float-shadow);
+  font-size: 12px;
+  color: var(--dr-ink);
+}
+
+.dr-note-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ak-radius-full);
+  background: var(--dr-accent);
+  flex: none;
+}
+
+.dr-note-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 滚动主舞台 */
+.dr-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 16px 76px;
+}
+
+.dr-stage.is-ooxml-full {
+  padding: 0 0 64px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dr-stage.is-snip-mode {
+  cursor: crosshair;
+  user-select: none;
+}
+
+/* PDF 页面堆栈 */
+.dr-pdf-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.dr-pdf-page {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid var(--dr-rule);
+  border-radius: var(--ak-radius-xs);
+  box-shadow: var(--dr-page-shadow);
+  overflow: hidden;
+  flex: none;
+  transition: box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.dr-pdf-page.is-pulsing {
+  border-color: var(--dr-accent);
+  box-shadow: var(--ak-elevation-float);
+}
+
+.dr-pdf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Readest 风格智能暗色融合：反转亮度并旋转 180deg 保持色相自然，减少夜间白纸刺眼 */
+.dr-shell[data-dark-blend="true"] .dr-pdf-page,
+.dr-shell[data-dark-blend="true"] .dr-ooxml-host {
+  filter: invert(0.88) hue-rotate(180deg) contrast(0.95);
+}
+
+/* PDF.js 6.x 透明文本选区层（匹配 --total-scale-factor / --font-height / --scale-x / --rotate） */
+.dr-text-layer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  user-select: text;
+  pointer-events: auto;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor, 1) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.dr-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.dr-text-layer > :not(.markedContent),
+.dr-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.dr-text-layer .markedContent {
+  display: contents;
+}
+
+.dr-text-layer ::selection {
+  background: color-mix(in oklab, var(--dr-accent) 32%, transparent);
+}
+
+.dr-text-layer span.is-search-hit {
+  background: rgba(234, 179, 8, 0.38);
+  border-radius: var(--ak-radius-xs);
+}
+
+.dr-text-layer span.is-search-current {
+  background: rgba(234, 179, 8, 0.68);
+  outline: 2px solid rgba(217, 119, 6, 0.55);
+}
+
+.dr-page-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: var(--ak-radius-xs);
+  background: rgba(29, 28, 25, 0.06);
+  color: rgba(29, 28, 25, 0.48);
+  font-family: var(--ak-type-technical, monospace);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+/* OOXML 容器 */
+.dr-ooxml-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+}
+
+/* 区域框选遮罩框 */
+.dr-snip-box {
+  position: fixed;
+  z-index: 45;
+  border: 1.5px dashed var(--dr-accent);
+  background: color-mix(in oklab, var(--dr-accent) 12%, transparent);
+  border-radius: var(--ak-radius-xs);
+  pointer-events: none;
+  display: none;
+}
+
+.dr-snip-box.is-visible { display: block; }
+
+/* 悬浮划词/选区引用胶囊 */
+.dr-popover {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--ak-radius-md);
+  background: #1d1c19;
+  color: #f6f5f0;
+  box-shadow: var(--ak-elevation-overlay);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 6px) scale(0.96);
+  transition: opacity 150ms ease, transform 180ms var(--dr-ease);
+}
+
+.dr-popover.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.dr-pop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--ak-radius-sm);
+  background: transparent;
+  color: #f6f5f0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dr-pop-btn:hover { background: rgba(255, 255, 255, 0.13); }
+.dr-pop-btn.is-primary { background: var(--dr-accent); color: #ffffff; }
+.dr-pop-btn.is-primary:hover { filter: brightness(1.08); }
+
+.dr-pop-kbd {
+  font-family: var(--ak-type-technical, monospace);
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+.dr-pop-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.16);
+  margin: 0 2px;
+}
+
+/* 悬浮目录抽屉与搜索条 */
+.dr-drawer {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: min(260px, calc(100% - 24px));
+  max-height: calc(100% - 88px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--dr-rule);
+  border-radius: var(--ak-radius-md);
+  background: var(--dr-surface);
+  box-shadow: var(--dr-float-shadow);
+  z-index: 36;
+  display: none;
+}
+
+.dr-drawer.is-open { display: block; }
+
+.dr-drawer-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dr-muted);
+  padding: 4px 8px 6px;
+}
+
+.dr-toc-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--ak-radius-sm);
+  background: transparent;
+  color: var(--dr-ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dr-toc-item:hover { background: color-mix(in oklab, var(--dr-ink) 7%, transparent); }
+.dr-toc-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-toc-page { font-family: var(--ak-type-technical, monospace); font-size: 11px; color: var(--dr-muted); flex: none; }
+
+.dr-search-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 38;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--dr-rule);
+  border-radius: var(--ak-radius-md);
+  background: var(--dr-surface);
+  box-shadow: var(--dr-float-shadow);
+}
+
+.dr-search-bar.is-open { display: flex; }
+
+.dr-search-input {
+  width: 168px;
+  height: 26px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--dr-ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.dr-search-count {
+  font-family: var(--ak-type-technical, monospace);
+  font-size: 11px;
+  color: var(--dr-muted);
+  padding: 0 4px;
+}
+
+/* 底部悬浮磨砂控制药丸 */
+.dr-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 7px;
+  border: 1px solid var(--dr-rule);
+  border-radius: var(--ak-radius-full);
+  background: var(--dr-pill-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--dr-float-shadow);
+  max-width: calc(100% - 20px);
+}
+
+.dr-pill-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--dr-rule);
+  margin: 0 3px;
+  flex: none;
+}
+
+.dr-pill-label {
+  font-family: var(--ak-type-technical, monospace);
+  font-size: 11.5px;
+  color: var(--dr-ink-2);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+/* 加载与错误占位 */
+.dr-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px;
+  color: var(--dr-muted);
+  text-align: center;
+}
+
+.dr-toast {
+  position: fixed;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  z-index: 60;
+  padding: 5px 11px;
+  border-radius: var(--ak-radius-sm);
+  background: #1d1c19;
+  color: #f6f5f0;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 180ms var(--dr-ease);
+}
+
+.dr-toast.is-show { opacity: 1; transform: translateX(-50%) translateY(0); }

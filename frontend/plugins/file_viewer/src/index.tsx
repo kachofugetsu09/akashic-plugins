@@ -52,6 +52,8 @@ import type {
 } from "@akashic/conversation-tools-v2";
 import type { WebHostContextV1, WebUiDisposer } from "@akashic/web-ui-v1";
 import { renderMarkdownProse } from "../../../../packages/akashic-plugin-kit/src/markdown-prose";
+import { detectDocumentFormat, type DocumentAnchor } from "../viewer/contract";
+import { ReaderLiveLink, RichDocumentFrame, type LiveOpenEvent } from "./rich-viewer";
 import { FileSyntax } from "./syntax";
 import "./style.css";
 
@@ -83,7 +85,7 @@ type OutlineItem = {
   el: HTMLElement;
 };
 
-const API = "/api/dashboard/markdown_reader";
+const API = "/api/dashboard/file_viewer";
 const PINS_KEY = "akashic.files.pins.v1";
 const VIEW_MODE_KEY = "akashic.files.viewMode.v1";
 const WIDE_BREAKPOINT_PX = 720;
@@ -429,6 +431,10 @@ function FileManagerApp({
   const [leavingTargetPath, setLeavingTargetPath] = useState<string | null>(null);
   const [imageBlobUrl, setImageBlobUrl] = useState<string>("");
   const [imageError, setImageError] = useState<string>("");
+  const [richAnchor, setRichAnchor] = useState<DocumentAnchor | null>(null);
+  const [richAnchorNonce, setRichAnchorNonce] = useState(0);
+  const [richStatusText, setRichStatusText] = useState("");
+  const liveLinkRef = useRef<ReaderLiveLink | null>(null);
 
   const syntaxRef = useRef<FileSyntax | null>(null);
   if (!syntaxRef.current) syntaxRef.current = new FileSyntax();
@@ -549,7 +555,14 @@ function FileManagerApp({
   const openFileRef = useRef<
     (
       targetPath: string,
-      options?: { tail?: boolean; line?: number | null; fragment?: string; allowDirectoryFallback?: boolean; dir?: 1 | -1 }
+      options?: {
+        tail?: boolean;
+        line?: number | null;
+        fragment?: string;
+        anchor?: DocumentAnchor | null;
+        allowDirectoryFallback?: boolean;
+        dir?: 1 | -1;
+      }
     ) => Promise<"opened" | "directory" | "failed">
   >(async () => "failed");
 
@@ -684,6 +697,7 @@ function FileManagerApp({
         tail?: boolean;
         line?: number | null;
         fragment?: string;
+        anchor?: DocumentAnchor | null;
         allowDirectoryFallback?: boolean;
         dir?: 1 | -1;
       } = {}
@@ -732,6 +746,13 @@ function FileManagerApp({
         setPath(resolvedPath);
         setDocResult(result);
         setSelectedLines(null);
+        setRichStatusText("");
+        if (options.anchor) {
+          setRichAnchor(options.anchor);
+          setRichAnchorNonce((n) => n + 1);
+        } else if (fileChanged) {
+          setRichAnchor(null);
+        }
         if (fileChanged) {
           setSource(Boolean(options.line && isMarkdown(resolvedPath)));
         }
@@ -788,12 +809,12 @@ function FileManagerApp({
   }, [loadFiles, normalizeRoots, requestJson]);
 
   const openOrBrowse = useCallback(
-    async (targetPath: string, line: number | null) => {
+    async (targetPath: string, line: number | null, anchor?: DocumentAnchor | null) => {
       if (targetPath.endsWith("/") && targetPath.length > 1) {
         await loadFiles(targetPath);
         return;
       }
-      const opened = await openFile(targetPath, { line, allowDirectoryFallback: true });
+      const opened = await openFile(targetPath, { line, anchor: anchor ?? null, allowDirectoryFallback: true });
       if (opened === "directory") {
         await loadFiles(targetPath);
       }
@@ -806,7 +827,14 @@ function FileManagerApp({
       if (intent.name !== "workspace.document.open.v1" && intent.name !== "workspace.file.open.v1") {
         return "invalid";
       }
-      const payload = intent.payload as { path?: unknown; line?: unknown } | null;
+      const payload = intent.payload as {
+        path?: unknown;
+        line?: unknown;
+        page?: unknown;
+        sheet?: unknown;
+        search?: unknown;
+        note?: unknown;
+      } | null;
       if (
         !payload ||
         typeof payload.path !== "string" ||
@@ -822,19 +850,67 @@ function FileManagerApp({
         typeof payload.line === "number" && Number.isInteger(payload.line) && payload.line > 0
           ? payload.line
           : null;
-      await openOrBrowse(payload.path, line);
+      const anchor: DocumentAnchor = {};
+      if (typeof payload.page === "number" && Number.isInteger(payload.page) && payload.page > 0) {
+        anchor.page = payload.page;
+      }
+      if (typeof payload.sheet === "string" && payload.sheet.trim()) {
+        anchor.sheet = payload.sheet.trim();
+      }
+      if (typeof payload.search === "string" && payload.search.trim()) {
+        anchor.search = payload.search.trim();
+      }
+      if (typeof payload.note === "string" && payload.note.trim()) {
+        anchor.note = payload.note.trim();
+      }
+      await openOrBrowse(payload.path, line, Object.keys(anchor).length > 0 ? anchor : null);
       return "handled";
     },
     [openOrBrowse]
   );
 
-  // 宿主订阅与初次目录加载
+  // 宿主订阅、Agent Live 通道与初次目录加载
   useEffect(() => {
     disposedRef.current = false;
     let subscribing = true;
+    const live = new ReaderLiveLink(ctx, (event: LiveOpenEvent) => {
+      if (disposedRef.current) return;
+      view.reveal(event.turn || event.path);
+      const anchor: DocumentAnchor = {};
+      if (typeof event.page === "number" && Number.isInteger(event.page) && event.page > 0) anchor.page = event.page;
+      if (typeof event.sheet === "string" && event.sheet.trim()) anchor.sheet = event.sheet.trim();
+      if (typeof event.search === "string" && event.search.trim()) anchor.search = event.search.trim();
+      if (typeof event.note === "string" && event.note.trim()) anchor.note = event.note.trim();
+      const line = typeof event.line === "number" && Number.isInteger(event.line) && event.line > 0 ? event.line : null;
+      const hasAnchor = Object.keys(anchor).length > 0;
+      if (
+        stateRef.current.mode === "read" &&
+        stateRef.current.path === event.path &&
+        detectDocumentFormat(event.path) &&
+        hasAnchor
+      ) {
+        setRichAnchor(anchor);
+        setRichAnchorNonce((n) => n + 1);
+        return;
+      }
+      void openFileRef.current(event.path, {
+        line,
+        anchor: hasAnchor ? anchor : null,
+        dir: 1,
+      });
+    });
+    liveLinkRef.current = live;
+    live.connectSession(stateRef.current.session);
+
     const stops: WebUiDisposer[] = [
       view.onSessionChange((nextSession) => {
+        live.connectSession(nextSession);
         if (nextSession === stateRef.current.session && stateRef.current.directory) return;
+        // 切换会话时取消旧会话在途文档请求，防止旧会话 live 事件或异步返回越界写入新会话
+        generationRef.current += 1;
+        docAbortRef.current?.abort();
+        setRichAnchor(null);
+        setRichStatusText("");
         setSession(nextSession);
         stateRef.current.session = nextSession;
         setWorkdir(undefined);
@@ -854,6 +930,8 @@ function FileManagerApp({
     }
     return () => {
       disposedRef.current = true;
+      live.close();
+      liveLinkRef.current = null;
       generationRef.current += 1;
       navigationRef.current += 1;
       filesAbortRef.current?.abort();
@@ -865,7 +943,7 @@ function FileManagerApp({
       window.clearTimeout(targetTimerRef.current);
       stops.forEach((stop) => stop());
     };
-  }, [clearBlobs, handleIntent, loadFiles, refreshSessionRoots, view]);
+  }, [clearBlobs, ctx, handleIntent, loadFiles, refreshSessionRoots, view]);
 
   // 监测面板容器宽度以切换停靠模式 / 宽屏模式
   useEffect(() => {
@@ -2070,7 +2148,7 @@ function FileManagerApp({
 
                       <article
                         ref={articleRef}
-                        className="md-article"
+                        className={`md-article${docResult?.status === "binary" && detectDocumentFormat(path) ? " is-rich-doc" : ""}`}
                         tabIndex={0}
                         aria-label="文件内容预览"
                         onClick={handleArticleClick}
@@ -2086,7 +2164,31 @@ function FileManagerApp({
                           </div>
                         )}
 
-                        {docResult?.status === "binary" && (
+                        {docResult?.status === "binary" && detectDocumentFormat(path) && session && (
+                          <RichDocumentFrame
+                            ctx={ctx}
+                            session={session}
+                            path={path}
+                            format={detectDocumentFormat(path)!}
+                            anchor={richAnchor}
+                            anchorNonce={richAnchorNonce}
+                            onQuote={(sourceLabel, text) => {
+                              const status = view.quote?.({
+                                session,
+                                source: sourceLabel.slice(0, 200),
+                                text: text.slice(0, 7800),
+                              });
+                              if (status === "inserted") {
+                                setQuoteFeedback(true);
+                                window.clearTimeout(quoteTimerRef.current);
+                                quoteTimerRef.current = window.setTimeout(() => setQuoteFeedback(false), 1500);
+                              }
+                            }}
+                            onStateChange={setRichStatusText}
+                          />
+                        )}
+
+                        {docResult?.status === "binary" && !detectDocumentFormat(path) && (
                           <div className="md-binary-card">
                             <strong>{basename(path)} 是二进制文件</strong>
                             <p>路径：{path}</p>
@@ -2134,7 +2236,7 @@ function FileManagerApp({
               ? needle
                 ? `筛选 ${filteredItems.length} / ${items.length} 项`
                 : `${items.length} 项${afterCursor ? "+" : ""}`
-              : `${fileTypeLabel(basename(path), "file")}${docResult?.bytes !== undefined ? ` · ${formatBytes(docResult.bytes)}` : ""}`}
+              : `${fileTypeLabel(basename(path), "file")}${docResult?.bytes !== undefined ? ` · ${formatBytes(docResult.bytes)}` : ""}${richStatusText ? ` · ${richStatusText}` : ""}`}
           </span>
 
           <div className="md-status-right">
@@ -2168,7 +2270,7 @@ function FileManagerApp({
 export function activate(ctx: WebHostContextV1): WebUiDisposer {
   return ctx.ui.inject("conversation.tools.v2", (mount) =>
     mount.register({
-      id: "markdown-reader",
+      id: "file-viewer",
       accepts: ["workspace.document.open.v1", "workspace.file.open.v1"],
       label: "文件",
       order: 25,
