@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import re
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -101,7 +102,8 @@ class WatchSettings(ModelSettings):
     async def read(self) -> dict[str, object]:
         result = await super().read()
         if "watch_enabled" not in self.ctx.config and watch_enabled_in(self.ctx.config):
-            values = dict(result["values"]) if isinstance(result.get("values"), dict) else {}
+            raw_values = result.get("values")
+            values: dict[str, object] = dict(cast(dict[str, object], raw_values)) if isinstance(raw_values, dict) else {}
             values["watch_enabled"] = True
             result["values"] = values
         return result
