@@ -2,18 +2,60 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.types import Scope
 
 from agent.plugin_composition import DashboardContext
 from plugins.host_execution.contract import FILE_IMPORT_BYTES, FILES, FileError, PathReader
+from plugins.ui.contract import CompressedStaticFiles
 from plugins.working_directory.contract import WORKING_DIRECTORY
 
-inject = (FILES, WORKING_DIRECTORY)
+from .live import READER_LIVE
+
+inject = (FILES, WORKING_DIRECTORY, READER_LIVE)
 PREVIEW_MAX_BYTES = 256 * 1024
+ASSETS = "/file_viewer/assets/"
+VIEWER = "viewer.html"
+VIEWER_POLICY = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' data: blob:; "
+    "worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+)
+
+
+class _ViewerAssets(CompressedStaticFiles):
+    def file_response(
+        self,
+        full_path: os.PathLike[str] | str,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        is_html = str(full_path).endswith(".html")
+        response.headers["Cache-Control"] = "no-cache" if is_html else "public, max-age=31536000, immutable"
+        if Path(full_path).name == VIEWER:
+            response.headers["Content-Security-Policy"] = VIEWER_POLICY
+        return response
+
+
+def asset_names(plugin_dir: Path) -> tuple[str, ...]:
+    folder = plugin_dir / "static"
+    if not folder.is_dir():
+        return ()
+    return tuple(sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()))
+
+
+def _asset_route(app: FastAPI, assets: _ViewerAssets, name: str) -> None:
+    async def asset(request: Request) -> Response:
+        return await assets.get_response(name, request.scope)
+
+    app.add_api_route(f"{ASSETS}{name}", asset, methods=["GET"], include_in_schema=False)
 
 
 def _detect_image_mime(head: bytes) -> str | None:
@@ -34,6 +76,14 @@ def _workspace_candidate(context: DashboardContext) -> str | None:
 
 
 def register(app: FastAPI, context: DashboardContext) -> None:
+    assets = _ViewerAssets(directory=context.plugin_dir / "static", check_dir=False)
+    for name in asset_names(context.plugin_dir):
+        _asset_route(app, assets, name)
+
+    @app.websocket("/api/dashboard/file_viewer/live")
+    async def live(socket: WebSocket, session: str = Query(min_length=1, max_length=512)) -> None:
+        await context.require(READER_LIVE).serve(socket, session)
+
     workspace_hint = _workspace_candidate(context)
     cached_static: dict[str, str | None] = {}
 
@@ -93,7 +143,7 @@ def register(app: FastAPI, context: DashboardContext) -> None:
             return None, resolved.model_dump(exclude_none=True)
         return resolved.path, None
 
-    @app.get("/api/dashboard/markdown_reader/files")
+    @app.get("/api/dashboard/file_viewer/files")
     async def files(
         session: str = Query(default="", max_length=512),
         path: str = Query(default="", max_length=4096),
@@ -115,7 +165,7 @@ def register(app: FastAPI, context: DashboardContext) -> None:
                     return {**listed.model_dump(exclude_none=True), "root": workdir, "roots": roots, "open_file": inspected.path}
             return {**result.model_dump(exclude_none=True), "root": workdir, "roots": roots}
 
-    @app.get("/api/dashboard/markdown_reader/document")
+    @app.get("/api/dashboard/file_viewer/document")
     async def document(
         session: str = Query(default="", max_length=512),
         path: str = Query(min_length=1, max_length=4096),
@@ -129,7 +179,7 @@ def register(app: FastAPI, context: DashboardContext) -> None:
             result = await reader.read("file_tail" if tail else "file_read", target, max_bytes=PREVIEW_MAX_BYTES)
             return result.model_dump(exclude_none=True)
 
-    @app.get("/api/dashboard/markdown_reader/raw")
+    @app.get("/api/dashboard/file_viewer/raw")
     async def raw(
         session: str = Query(default="", max_length=512),
         path: str = Query(min_length=1, max_length=4096),

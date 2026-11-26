@@ -13,7 +13,7 @@ members = ["session_title", "main_session", "projects", "privacy_mask"]
 [groups.workbench]
 title = "工作台"
 description = "改动摘要、Markdown 阅读、终端"
-members = ["workspace_changes", "markdown_reader", "terminal"]
+members = ["workspace_changes", "file_viewer", "terminal"]
 
 [groups.web]
 title = "联网"

@@ -110,6 +110,17 @@ jobs:
         run: |
           uv venv .venv --python 3.12
           uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          req_args=()
+          for req in plugins/*/requirements.inprocess.txt; do
+            [ -s "$req" ] && req_args+=(-r "$req")
+          done
+          wheel_args=()
+          for wdir in plugins/*/wheels; do
+            [ -d "$wdir" ] && wheel_args+=(--find-links "$wdir")
+          done
+          if [ ${#req_args[@]} -gt 0 ]; then
+            uv pip install --python .venv "${wheel_args[@]}" "${req_args[@]}"
+          fi
           export PATH="$SYNTH_DIR/.venv/bin:$PATH"
           "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope lint --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
@@ -151,6 +162,17 @@ jobs:
         run: |
           uv venv .venv --python 3.12
           uv pip install --python .venv -r requirements-dev.txt -e sdk/python
+          req_args=()
+          for req in plugins/*/requirements.inprocess.txt; do
+            [ -s "$req" ] && req_args+=(-r "$req")
+          done
+          wheel_args=()
+          for wdir in plugins/*/wheels; do
+            [ -d "$wdir" ] && wheel_args+=(--find-links "$wdir")
+          done
+          if [ ${#req_args[@]} -gt 0 ]; then
+            uv pip install --python .venv "${wheel_args[@]}" "${req_args[@]}"
+          fi
           export PATH="$SYNTH_DIR/.venv/bin:$PATH"
           "$SYNTH_DIR/.venv/bin/python" ../extra/scripts/extra_ci.py verify --scope test --core "$CORE_DIR" --synth "$SYNTH_DIR"
 
