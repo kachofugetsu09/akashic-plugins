@@ -39,8 +39,8 @@ POINTER = (
 
 api_version = 3
 name = "watch"
-version = "1.15.0"
-desc = "值班：便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；主 Agent 在后台醒来后自己决定做什么、说不说话"
+version = "1.16.0"
+desc = "值班（默认关闭）：便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；找不到低价或免费 token 时不建议开启"
 inject = (PLUGIN_CONFIG, CHAT_MODELS, MODEL_CATALOG, MESSAGE_CATALOG, PROGRAMMATIC, PROCESSES)
 workspace_roots = ("watch",)
 
@@ -91,7 +91,7 @@ async def apply(ctx: Context) -> None:
 
     async def start(_event: object) -> None:
         nonlocal watcher
-        if config.target:
+        if config.enabled and config.target:
             watcher = await ctx.spawn(runtime.follow(), name="watch")
 
     async def stop(_event: object) -> None:

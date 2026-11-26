@@ -37,7 +37,7 @@ members = ["goal"]
 
 [groups.watch]
 title = "值班"
-description = "主动关注并在需要时提醒你"
+description = "主动关注并在需要时提醒你（默认关闭，找不到低价或免费 token 时不建议开启）"
 members = ["watch", "userinformation"]
 
 [groups.memory]
