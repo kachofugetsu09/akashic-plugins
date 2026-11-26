@@ -20,9 +20,10 @@ from plugins.ledger.contract import (
     OWNER_STATE,
 )
 from plugins.models.contract import MODEL_CALL_STATS
+from plugins.operations.contract import OPERATIONS_V1
 from plugins.tools.contract import TOOLS, ProviderBoundTool
 
-from .command import GoalCommand
+from .command import GoalCommand, register_operations
 from .contract import GOAL_STATUS
 from .runtime import GoalRuntime
 from .store import GoalStore
@@ -155,7 +156,9 @@ async def apply(ctx: Context) -> None:
         handler=command,
         recover=command,
         input_hint="[<objective> | pause | resume | clear | budget <n> | budget clear]",
+        subcommands=("show", "set", "pause", "resume", "clear", "budget"),
     ))
+    _ = await ctx.inject((OPERATIONS_V1,), lambda child: register_operations(child, ctx, command), name="operations")
 
     follower = None
     worker = None

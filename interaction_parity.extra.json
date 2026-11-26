@@ -50,7 +50,6 @@
     "http:terminal:POST /api/dashboard/terminal/terminals",
     "http:terminal:WEBSOCKET /api/dashboard/terminal/attach",
     "http:visuals:GET /visuals/frame.html",
-    "slash:goal",
     "ws:phone_use/ack",
     "ws:phone_use/response",
     "ws:phone_use/state"
