@@ -13,6 +13,7 @@ from plugins.commands.contract import (
 )
 from agent.plugin_composition.runtime_catalog import RUNTIME_CATALOG
 from plugins.mcp.contract import MCP_SERVERS
+from plugins.operations.contract import OPERATIONS_V1, OperationRequest, OperationResult, OperationSpec
 
 api_version = 3
 name = "stable_view"
@@ -127,7 +128,7 @@ def format_stable_catalog(catalog: Mapping[str, object]) -> str:
 async def apply(ctx: Context) -> None:
     """注册 /stable 只读命令；在当前 Fiber scope 读取 live 运行图。"""
 
-    async def show_stable(_invocation: CommandInvocation) -> CommandResult:
+    async def read_stable() -> CommandResult:
         try:
             async with ctx.runtime_scope():
                 reader = ctx.require(RUNTIME_CATALOG)
@@ -139,9 +140,25 @@ async def apply(ctx: Context) -> None:
         except Exception as error:  # live owner 失败也必须如实回报
             return CommandResult("error", f"读取 stable 组合失败: {error}")
 
+    async def show_stable(_invocation: CommandInvocation) -> CommandResult:
+        return await read_stable()
+
     _ = await ctx.require(COMMANDS).register(ctx, CommandDefinition(
         name="stable",
         description="显示当前 stable 组合的插件与 Fiber 依赖树",
         handler=show_stable,
         read_only=True,
     ))
+
+    async def register_ops(child: Context) -> None:
+        async def show(_req: OperationRequest) -> OperationResult:
+            result = await read_stable()
+            ok = result.kind == "success"
+            return OperationResult(ok, result.text, error_code=None if ok else "unavailable")
+
+        _ = await child.require(OPERATIONS_V1).register(child, OperationSpec(
+            "stable_view.show", ("stable", "show"), "显示当前 stable 组合的插件与 Fiber 依赖树", show,
+            mirrors=("slash:stable",),
+        ))
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")

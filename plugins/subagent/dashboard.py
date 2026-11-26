@@ -8,6 +8,7 @@ from agent.plugin_composition import DashboardContext, ServiceKey
 from plugins.jobs.contract import JOB_NOTICES
 from plugins.ui.contract import SETTINGS_SLOT, UI, Configuration
 
+from .control import cancel_job, read_messages, send_message, session_tree, stop_runner
 from .runners import Runners
 from .runtime import SubagentBusy, Subagents
 
@@ -41,12 +42,7 @@ def register(app: FastAPI, context: DashboardContext) -> None:
     @app.get("/api/dashboard/subagent/tree")
     async def tree(session: str = Query(min_length=1, max_length=512)) -> dict[str, object]:
         jobs, runners = context.require(SUBAGENT_UI_SERVICE)
-        await jobs.ensure_index()
-        return {
-            "session": session,
-            "subagents": jobs.session_tree(session),
-            "runs": runners.records(session),
-        }
+        return await session_tree(jobs, runners, session)
 
     @app.get("/api/dashboard/subagent/messages")
     async def messages(
@@ -57,48 +53,39 @@ def register(app: FastAPI, context: DashboardContext) -> None:
         limit: int = Query(default=100, ge=1, le=200),
     ) -> dict[str, object]:
         jobs, _ = context.require(SUBAGENT_UI_SERVICE)
-        await jobs.ensure_index()
-        root_id, _ = jobs.resolve_lineage(session)
         try:
-            return await jobs.read_child_messages(root_id, job_id, after_seq=after_seq, before_seq=before_seq, limit=limit)
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from None
+            return await read_messages(jobs, session, job_id, after_seq=after_seq, before_seq=before_seq, limit=limit)
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error)) from None
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from None
 
     @app.post("/api/dashboard/subagent/send")
     async def send(body: SendBody) -> dict[str, object]:
         jobs, _ = context.require(SUBAGENT_UI_SERVICE)
-        await jobs.ensure_index()
-        root_id, _ = jobs.resolve_lineage(body.session)
-        msg_text = body.message.strip()
-        if not msg_text:
-            raise HTTPException(status_code=422, detail="消息不能为空")
         try:
-            return await jobs.send(root_id, body.job_id, msg_text, background=True)
-        except KeyError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from None
+            return await send_message(jobs, body.session, body.job_id, body.message)
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error)) from None
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from None
         except SubagentBusy as error:
             raise HTTPException(status_code=409, detail=str(error)) from None
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
 
     @app.post("/api/dashboard/subagent/cancel")
     async def cancel(body: CancelBody) -> dict[str, object]:
         jobs, _ = context.require(SUBAGENT_UI_SERVICE)
-        await jobs.ensure_index()
-        root_id, _ = jobs.resolve_lineage(body.session)
-        items = jobs.session_tree(body.session, limit=100)
-        target = next((item for item in items if item.get("job_id") == body.job_id), None)
-        if target is None or target.get("root_session_id") != root_id:
-            raise HTTPException(status_code=404, detail="子任务不属于当前会话树")
-        accepted = await jobs.cancel(body.job_id)
-        return {"accepted": accepted}
+        try:
+            return await cancel_job(jobs, body.session, body.job_id)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from None
 
     @app.post("/api/dashboard/subagent/runner-stop")
     async def runner_stop(body: CancelBody) -> dict[str, object]:
         _, runners = context.require(SUBAGENT_UI_SERVICE)
-        if runners.receipt(body.session, body.job_id) is None:
-            raise HTTPException(status_code=404, detail="外部任务不属于当前会话")
-        accepted = await context.require(JOB_NOTICES).stop_job(body.session, body.job_id)
-        return {"accepted": accepted}
+        try:
+            return await stop_runner(runners, context.require(JOB_NOTICES), body.session, body.job_id)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from None

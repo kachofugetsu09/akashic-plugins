@@ -51,6 +51,8 @@ READ_ONLY_EXCLUDED_TOOLS: frozenset[str] = frozenset({
     "spawn",
     "spawn_manage",
     "subagent_send",
+    # Self-CLI 单工具把整套写操作藏在中性名字下；只读子任务整体不给，后续再开放父授权派生的只读集合。
+    "self",
 }) | EXCLUDED_ALWAYS_TOOLS
 
 _READ_ONLY_DESIGN_TOOLS: frozenset[str] = frozenset({"design_get_jsx", "design_describe"})
