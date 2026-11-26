@@ -30,6 +30,20 @@ export type ReaderToFrame =
       theme: "light" | "dark";
     };
 
+export type QuoteImagePayload = {
+  dataUrl: string;
+  filename?: string;
+  mediaType?: "image/png" | "image/jpeg" | "image/webp";
+};
+
+export type QuoteAnchorPayload = {
+  path?: string;
+  page?: number;
+  line?: number;
+  sheet?: string;
+  range?: string;
+};
+
 export type ReaderFromFrame =
   | {
       channel: typeof READER_CHANNEL;
@@ -40,6 +54,8 @@ export type ReaderFromFrame =
       type: "quote";
       source: string;
       text: string;
+      image?: QuoteImagePayload;
+      anchor?: QuoteAnchorPayload;
     }
   | {
       channel: typeof READER_CHANNEL;
