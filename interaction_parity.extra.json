@@ -1,6 +1,8 @@
 {
   "version": 2,
-  "explicit_exemption": {},
+  "explicit_exemption": {
+    "http:terminal:WEBSOCKET /api/dashboard/terminal/attach": {"kind": "user_only", "reason": "交互终端的输入与输出是用户本人的 shell，不进入 Agent 上下文，也不让 Agent 代为键入", "decision": "ADR-0122"}
+  },
   "agent_only": {},
   "legacy_backlog": [
     "http:computer:GET /api/dashboard/computer/activity",
@@ -45,10 +47,6 @@
     "http:phone_use:POST /api/phone/reply",
     "http:phone_use:POST /api/phone/stream",
     "http:phone_use:WEBSOCKET /api/phone/ws",
-    "http:terminal:DELETE /api/dashboard/terminal/terminals/{terminal_id}",
-    "http:terminal:GET /api/dashboard/terminal/terminals",
-    "http:terminal:POST /api/dashboard/terminal/terminals",
-    "http:terminal:WEBSOCKET /api/dashboard/terminal/attach",
     "http:visuals:GET /visuals/frame.html",
     "ws:phone_use/ack",
     "ws:phone_use/response",

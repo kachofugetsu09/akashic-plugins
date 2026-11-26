@@ -1,9 +1,11 @@
 """用户交互终端：会话里的 shell 由执行主机拥有，本插件按会话命名并提供浏览器入口。"""
 from agent.plugin_composition import Context
 from plugins.host_execution.contract import TERMINALS
+from plugins.operations.contract import OPERATIONS_V1
 from plugins.ui.contract import UI
 
 from . import dashboard
+from .operations import register_operations
 from .sessions import SESSION_TERMINALS, SessionTerminals
 
 api_version = 3
@@ -14,7 +16,8 @@ inject = (TERMINALS,)
 
 
 async def apply(ctx: Context) -> None:
-    await ctx.provide(SESSION_TERMINALS, SessionTerminals(ctx))
+    terminals = SessionTerminals(ctx)
+    await ctx.provide(SESSION_TERMINALS, terminals)
 
     # UI 缺席时只是没有浏览器入口，终端服务照常可用。
     async def register_ui(child: Context) -> None:
@@ -27,3 +30,9 @@ async def apply(ctx: Context) -> None:
         )
 
     _ = await ctx.inject((UI, SESSION_TERMINALS), register_ui, name="terminal-ui")
+
+    # 没有 operations 插件时只是 self 里没有终端命令。
+    async def register_ops(child: Context) -> None:
+        await register_operations(child, terminals)
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")

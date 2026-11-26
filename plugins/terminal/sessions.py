@@ -57,4 +57,9 @@ class SessionTerminals:
         return None if path is None else Path(path)
 
 
+# 浏览器与 self 看到的同一份终端视图：不含任何输出内容。
+def terminal_view(info: TerminalInfo) -> dict[str, object]:
+    return {"id": info.terminal_id, "shell": info.shell, "cwd": info.cwd, "exited": info.exited, "exit_code": info.exit_code}
+
+
 SESSION_TERMINALS = ServiceKey[SessionTerminals]("terminal.sessions.v1")

@@ -10,10 +10,10 @@ from starlette.websockets import WebSocketState
 
 from agent.plugin_composition import DashboardContext
 from plugins.host_execution.contract import (
-    TERMINAL_MAX_COLS, TERMINAL_MAX_ROWS, TERMINAL_MAX_WRITE_BYTES, TerminalInfo, UnknownTerminalError,
+    TERMINAL_MAX_COLS, TERMINAL_MAX_ROWS, TERMINAL_MAX_WRITE_BYTES, UnknownTerminalError,
 )
 
-from .sessions import SESSION_TERMINALS, SessionTerminals
+from .sessions import SESSION_TERMINALS, SessionTerminals, terminal_view as _view
 
 inject = (SESSION_TERMINALS,)
 _SESSION = Query(min_length=1, max_length=512)
@@ -53,10 +53,6 @@ def register(app: FastAPI, context: DashboardContext) -> None:
             return await socket.close(code=1008, reason="终端参数无效")
         await socket.accept()
         await _relay(socket, context.require(SESSION_TERMINALS), *target)
-
-
-def _view(info: TerminalInfo) -> dict[str, object]:
-    return {"id": info.terminal_id, "shell": info.shell, "cwd": info.cwd, "exited": info.exited, "exit_code": info.exit_code}
 
 
 def _attach_target(socket: WebSocket) -> tuple[str, int, int] | None:
