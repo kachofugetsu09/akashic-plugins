@@ -41,6 +41,8 @@ from plugins.ledger.contract import ARTIFACT_IMPORT, AttachmentKind, ContentPart
 from agent.plugin_composition.plugin_config import PLUGIN_CONFIG
 from plugins.plugin_settings.contract import SETTINGS_FORMS, declare_settings
 from .control import ComputerDriverError, endpoint_name, request
+from .operations import register_operations
+from plugins.operations.contract import OPERATIONS_V1
 from .stream import MEDIA_PORT, STREAM_CONFIG, STREAM_FORM, StreamConfig, StreamSettings
 
 # 私有耐久 control binding；工具的 freeze/open 在本插件内保存并打开同一个 key。
@@ -373,6 +375,13 @@ async def apply(ctx: Context) -> None:
             workload_env=(WorkloadEnv("COMPUTER_URL", workload, "gateway"),),
         ),
     )
+
+    # 没有 operations 插件时只是 self 里没有面板动作；网关地址每次按本插件当前的 Workload lease 取。
+    async def register_ops(child: Context) -> None:
+        await register_operations(child, lambda: workload.url(ctx, "gateway"))
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")
+
     async def start_follower(_event: object) -> None:
         _ = await ctx.spawn(_start_follower(ctx), name="computer-turn-follower")
 

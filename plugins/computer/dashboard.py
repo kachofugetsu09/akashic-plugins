@@ -4,6 +4,7 @@ import asyncio
 import logging
 import json
 import time
+from collections.abc import Mapping
 from contextlib import suppress
 from typing import cast
 from urllib.parse import urlsplit, urlunsplit
@@ -17,6 +18,7 @@ from websockets.typing import Subprotocol
 
 from agent.plugin_composition import DashboardContext
 
+from .view import GatewayError, ViewAction, call_view, gateway_request
 from .stream import STREAM_CONFIG, IceServer, StreamAccess, StreamMode, lan_candidate, relay_only, signaling_hello
 
 inject = (STREAM_CONFIG,)
@@ -59,12 +61,6 @@ def _input_open(state: dict[str, object]) -> bool:
     return ready and state.get("busy") is False
 
 
-def _gateway_error(response: httpx.Response) -> str:
-    value: object = response.json()
-    message = cast(dict[str, object], value).get("error") if isinstance(value, dict) else None
-    return message if isinstance(message, str) else f"Computer returned {response.status_code}"
-
-
 def register(app: FastAPI, context: DashboardContext) -> httpx.Client:
     """Expose the exact generation's private Computer endpoint to its web tab."""
 
@@ -75,57 +71,45 @@ def register(app: FastAPI, context: DashboardContext) -> httpx.Client:
     client = httpx.Client(base_url=gateway, timeout=125.0)
     access = StreamAccess(gateway, stream_http)
 
-    def forward(
-        method: str, path: str, payload: object | None = None
-    ) -> httpx.Response:
+    def forward(method: str, path: str, payload: object | None = None) -> httpx.Response:
         try:
-            response = client.request(method, path, json=payload)
-        except httpx.HTTPError as error:
-            raise HTTPException(status_code=502, detail=str(error)) from error
-        if response.status_code == 400:
-            raise HTTPException(status_code=400, detail=_gateway_error(response))
-        if response.status_code >= 400:
-            raise HTTPException(
-                status_code=502,
-                detail=_gateway_error(response),
-            )
-        return response
+            return gateway_request(client, method, path, payload)
+        except GatewayError as error:
+            raise HTTPException(status_code=error.status, detail=str(error)) from error
+
+    def view(action: ViewAction, payload: Mapping[str, object]) -> Response:
+        try:
+            return Response(call_view(client, action, payload), media_type="application/json")
+        except GatewayError as error:
+            raise HTTPException(status_code=error.status, detail=str(error)) from error
 
     @app.get("/api/dashboard/computer/activity")
     def activity() -> Response:
-        result = forward("GET", "/activity")
-        return Response(result.content, media_type="application/json")
+        return view("activity", {})
 
     @app.post("/api/dashboard/computer/wake")
     def wake() -> Response:
-        result = forward("POST", "/wake", {})
-        return Response(result.content, media_type="application/json")
+        return view("wake", {})
 
     @app.post("/api/dashboard/computer/restart")
     def restart() -> Response:
-        result = forward("POST", "/restart", {})
-        return Response(result.content, media_type="application/json")
+        return view("restart", {})
 
     @app.post("/api/dashboard/computer/show")
     def show(payload: dict[str, str]) -> Response:
-        result = forward("POST", "/view/show", {"target": payload.get("target", "")})
-        return Response(result.content, media_type="application/json")
+        return view("show", payload)
 
     @app.post("/api/dashboard/computer/navigate")
     def navigate(payload: dict[str, str]) -> Response:
-        body = {key: payload[key] for key in ("target", "action", "url") if key in payload}
-        result = forward("POST", "/view/navigate", body)
-        return Response(result.content, media_type="application/json")
+        return view("navigate", payload)
 
     @app.post("/api/dashboard/computer/open")
     def open_page(payload: dict[str, str]) -> Response:
-        result = forward("POST", "/view/open", {key: payload[key] for key in ("url",) if key in payload})
-        return Response(result.content, media_type="application/json")
+        return view("open", payload)
 
     @app.post("/api/dashboard/computer/close")
     def close_page(payload: dict[str, str]) -> Response:
-        result = forward("POST", "/view/close", {key: payload[key] for key in ("target",) if key in payload})
-        return Response(result.content, media_type="application/json")
+        return view("close", payload)
 
     @app.get("/api/dashboard/computer/stream-client")
     def stream_client() -> Response:
@@ -200,8 +184,7 @@ def register(app: FastAPI, context: DashboardContext) -> httpx.Client:
     @app.post("/api/dashboard/computer/touch")
     def touch_view(payload: dict[str, bool] | None = None) -> Response:
         # WebRTC 的键鼠不经 Core，由面板在人直接操作时续期；input 让 Agent 的下一步等人停手。
-        result = forward("POST", "/view/touch", {"input": bool(payload and payload.get("input"))})
-        return Response(result.content, media_type="application/json")
+        return view("touch", payload or {})
 
     @app.websocket("/api/dashboard/computer/stream")
     async def computer_display(socket: WebSocket) -> None:
