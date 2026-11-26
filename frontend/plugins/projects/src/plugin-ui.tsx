@@ -2,7 +2,7 @@ import "./plugin-ui.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   render, type NavigationForm, type NavigationGroup, type NavigationGroupsProvider, type PluginUiHostContext,
-  type PluginUiNavigationContext, type PluginUiNavigationFormContext,
+  type PluginUiNavigationContext, type PluginUiNavigationFormContext, type ScopeFieldValues,
 } from "@akashic/chat-ui-v1";
 
 type Query = PluginUiHostContext["query"];
@@ -18,6 +18,8 @@ interface PendingProject {
   id: string;
   name: string;
   directory?: string | null;
+  /** 附加设置随请求记下：继续创建时原样重放，与项目记录同一事务提交。 */
+  extensions?: ScopeFieldValues;
 }
 
 interface PendingRow {
@@ -47,7 +49,9 @@ function parsePending(key: string, raw: string | null): PendingProject {
   if (typeof row.id !== "string" || key !== PENDING_PREFIX + row.id
     || typeof row.name !== "string" || !row.name || "memory" in row
     || (row.directory !== undefined && row.directory !== null
-      && (typeof row.directory !== "string" || !row.directory.startsWith("/")))) throw new Error("待创建项目记录无效");
+      && (typeof row.directory !== "string" || !row.directory.startsWith("/")))
+    || (row.extensions !== undefined && (typeof row.extensions !== "object" || row.extensions === null
+      || Array.isArray(row.extensions)))) throw new Error("待创建项目记录无效");
   return row as unknown as PendingProject;
 }
 
@@ -72,24 +76,23 @@ function listPending(): { items: PendingRow[]; error: string } {
 async function finishProject(query: Query, pending: PendingProject): Promise<string> {
   const project = projectOf(await query("project.create", {
     project_id: pending.id, name: pending.name, ...(pending.directory ? { directory: pending.directory } : {}),
+    ...(pending.extensions && Object.keys(pending.extensions).length ? { extensions: pending.extensions } : {}),
   }));
   if (project.id !== pending.id) throw new Error("项目创建响应 ID 不一致");
   localStorage.removeItem(PENDING_PREFIX + pending.id);
   return project.id;
 }
 
-// 先让其他插件为新 ID 保存设置，再幂等建项目；建项目失败的请求只由用户显式继续。
+// 项目与其他插件的附加设置（例如记忆策略）一次原子提交；响应丢失的请求只由用户显式继续。
 async function createProject(query: Query, name: string, directory: string | null,
-  commitFields: (value: string) => Promise<void>): Promise<string> {
+  extensions: ScopeFieldValues): Promise<string> {
   const snapshot = listPending();
   if (snapshot.error) throw new Error(snapshot.error);
   if (snapshot.items.some((item) => item.name === name)) throw new Error("同名项目存在未确认请求，请在项目栏继续创建或停止尝试");
   // 纯 HTTP 访问时没有 randomUUID，直接取 16 个随机字节。
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, "0")).join("");
-  const pending = { id: `p_${id}`, name, directory };
-  // 1. 附加设置（例如记忆策略）必须在项目出现第一个会话前保存；失败时什么都没创建，可直接重试。
-  await commitFields(pending.id);
-  // 2. 之后只差项目记录本身：先记下请求，响应丢失时可在项目栏继续。
+  const pending = { id: `p_${id}`, name, directory, extensions };
+  // 先记下请求，响应丢失时可在项目栏继续；同一 ID 重放得到同一项目与设置。
   localStorage.setItem(PENDING_PREFIX + pending.id, JSON.stringify(pending));
   try {
     return await finishProject(query, pending);
@@ -176,7 +179,7 @@ function useBusy(context: PluginUiNavigationFormContext): boolean {
   return busy;
 }
 
-// 新建项目：名称与可选的默认目录；宿主按钮提交，scope.fields 的附加设置随 commitFields 在创建前保存。
+// 新建项目：名称与可选的默认目录；宿主按钮提交，scope.fields 的附加设置随创建请求一起原子提交。
 function CreateProject({ context }: { context: PluginUiNavigationFormContext }) {
   const [name, setName] = useState("");
   const [directory, setDirectory] = useState<string | null>(null);
@@ -185,8 +188,8 @@ function CreateProject({ context }: { context: PluginUiNavigationFormContext }) 
   const busy = useBusy(context);
   const latest = useRef({ name, directory });
   latest.current = { name, directory };
-  useEffect(() => context.form.onSubmit((commitFields) =>
-    createProject(context.query, latest.current.name.trim(), latest.current.directory, commitFields)), [context]);
+  useEffect(() => context.form.onSubmit((extensions) =>
+    createProject(context.query, latest.current.name.trim(), latest.current.directory, extensions())), [context]);
   useEffect(() => context.form.setReady(Boolean(name.trim())), [context, name]);
   return <div className="projects-ui-form">
     <label className="projects-ui-field">

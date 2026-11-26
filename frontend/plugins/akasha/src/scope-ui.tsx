@@ -78,22 +78,16 @@ function readPolicy(context: PluginUiContext<"scope.badge">, key: string): Promi
   return pending;
 }
 
-// 新建表单里的记忆范围：创建前由宿主调用提交，策略在第一个会话出现前固定。
+// 新建表单里的记忆范围：只登记取值（--akasha.learn/recall），由维度 owner 与范围记录同一事务固定。
 function MemoryField({ context, fields }: { context: PluginUiContext<"scope.fields">; fields: ScopeFieldControls }) {
   const [memory, setMemory] = useState<Memory>("global");
   const [busy, setBusy] = useState(() => fields.busy());
   const chosen = useRef(memory);
   chosen.current = memory;
   useEffect(() => {
-    const { dimension } = context.scope;
     const stopBusy = context.onInvalidate(() => setBusy(fields.busy()));
-    const stopCommit = fields.onCommit(async (value) => {
-      const wanted = chosen.current;
-      const result = await context.query("scope.policy.set", { dimension, value, ...policyOf(wanted) });
-      if (memoryOf(result) !== wanted) throw new Error("记忆策略与创建请求不一致");
-      rememberPolicy(`${dimension}:${value}`, wanted);
-    });
-    return () => { stopBusy(); stopCommit(); };
+    const stopContribute = fields.contribute("akasha", () => policyOf(chosen.current));
+    return () => { stopBusy(); stopContribute(); };
   }, [context, fields]);
   return <ChoiceMenu ariaLabel="记忆设置" value={memory} choices={CHOICES} note="创建后，记忆选项将固定。"
     disabled={busy} onChange={(value) => setMemory(value as Memory)} />;
