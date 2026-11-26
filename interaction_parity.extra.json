@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "explicit_exemption": {
     "http:computer:GET /api/dashboard/computer/stream-client": {"kind": "view_only", "reason": "画面流客户端脚本（selkies-core.js）静态资产", "decision": ""},
     "http:computer:GET /api/dashboard/computer/stream-source/{name}": {"kind": "view_only", "reason": "画面流客户端源码与许可证的只读静态资产", "decision": ""},
@@ -19,13 +19,13 @@
     "http:phone_use:POST /api/phone/events": {"kind": "transport", "reason": "Android 端侧订阅引擎批量上报原始设备事件", "decision": ""},
     "http:phone_use:POST /api/phone/reply": {"kind": "transport", "reason": "Android Shell 回传 RPC 执行结果与状态变更（SSE 通道的回程）", "decision": ""},
     "http:phone_use:POST /api/phone/stream": {"kind": "transport", "reason": "Android Shell 建立接收 RPC 指令的 SSE 长连接", "decision": ""},
-    "http:phone_use:WEBSOCKET /api/phone/ws": {"kind": "transport", "reason": "Android Shell 的 WebSocket 设备通道（hello/RPC/心跳）", "decision": ""},
+    "http:phone_use:WEBSOCKET /api/phone/ws#hello": {"kind": "transport", "reason": "Android Shell 的 WebSocket 设备通道（hello/RPC/心跳）", "decision": ""},
+    "http:phone_use:WEBSOCKET /api/phone/ws#ping": {"kind": "transport", "reason": "Android Shell 的 WebSocket 设备通道（hello/RPC/心跳）", "decision": ""},
     "http:terminal:WEBSOCKET /api/dashboard/terminal/attach": {"kind": "user_only", "reason": "交互终端的输入与输出是用户本人的 shell，不进入 Agent 上下文，也不让 Agent 代为键入", "decision": "ADR-0122"},
     "http:visuals:GET /visuals/frame.html": {"kind": "view_only", "reason": "render_visual 隔离沙箱 iframe 的静态入口页，不读取附件或业务状态", "decision": ""},
     "ws:phone_use/ack": {"kind": "transport", "reason": "Android Shell 在设备通道上回的 RPC 受理确认帧", "decision": ""},
     "ws:phone_use/response": {"kind": "transport", "reason": "Android Shell 在设备通道上回的 RPC 执行结果帧", "decision": ""},
     "ws:phone_use/state": {"kind": "transport", "reason": "Android Shell 在设备通道上主动上报的显示/画中画状态帧", "decision": ""}
   },
-  "agent_only": {},
-  "legacy_backlog": []
+  "agent_only": {}
 }
