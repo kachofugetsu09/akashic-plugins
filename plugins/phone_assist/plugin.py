@@ -5,7 +5,9 @@ from agent.plugin_composition import Context
 from core.common.file_io import run_file_io
 from plugins.channels.contract import CHANNEL_INPUT_V2
 from plugins.ledger.contract import ARTIFACT_IMPORT, MESSAGE_CATALOG
+from plugins.operations.contract import OPERATIONS_V1
 
+from .operations import register_operations
 from .server import start_assist_listener
 from .store import (
     DEFAULT_PROJECT_ID,
@@ -39,4 +41,10 @@ async def apply(ctx: Context) -> None:
         resume_window_seconds=resume_window,
     )
     await run_file_io(store.load_sync)
-    await start_assist_listener(ctx, store)
+    actions = await start_assist_listener(ctx, store)
+
+    # 没有 operations 插件时只是 self 里没有手机助手命令。
+    async def register_ops(child: Context) -> None:
+        await register_operations(child, actions)
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")

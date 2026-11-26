@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import re
 import secrets
 from dataclasses import asdict
 from pathlib import Path
@@ -18,13 +17,12 @@ from starlette.types import Scope
 from agent.plugin_composition import DashboardContext
 from plugins.ui.contract import CompressedStaticFiles
 
-from .live import DESIGN_LIVE
-from .store import DESIGN_STORE, MAX_DOCUMENT_BYTES, DesignDocument, DesignStore, DesignStoreError, RevisionConflict
+from .live import DESIGN_LIVE, save_document
+from .store import DESIGN_STORE, DOCUMENT_ID, MAX_DOCUMENT_BYTES, DesignDocument, DesignStore, DesignStoreError, RevisionConflict
 
 inject = (DESIGN_STORE, DESIGN_LIVE)
 ASSETS = "/design/assets/"
 _SESSION = Query(min_length=1, max_length=512)
-_DOCUMENT = re.compile(r"[0-9a-f]{16}")
 # 编辑器页面比宿主默认策略多放行 CanvasKit 的 WASM 编译与 Iconify 的图标接口；不放行内联脚本与 eval。
 EDITOR = "editor.html"
 # 服务端无头画布的入口页：后端在无头浏览器里直接读文件打开，这里登记的路由只是随产物一起列出，策略与编辑器相同。
@@ -141,12 +139,12 @@ def _content_routes(app: FastAPI, context: DashboardContext) -> None:
                     base: int = Query(ge=0)) -> dict[str, object]:
         data = await _body(request)
         try:
-            saved = await _store(context).write(session, _checked(document), data, base=base)
+            saved = await save_document(_store(context), context.require(DESIGN_LIVE), session,
+                                        _checked(document), data, base=base)
         except RevisionConflict as error:
             raise HTTPException(409, {"message": str(error), "revision": error.current}) from error
         except DesignStoreError as error:
             raise HTTPException(404, str(error)) from error
-        await context.require(DESIGN_LIVE).changed(session, saved.id, saved.revision)
         return _view(saved)
 
 
@@ -216,7 +214,7 @@ def _store_font(cache: Path, key: str, data: bytes, media: str) -> None:
 
 
 def _checked(document: str) -> str:
-    if not _DOCUMENT.fullmatch(document):
+    if not DOCUMENT_ID.fullmatch(document):
         raise HTTPException(400, "文档 ID 无效")
     return document
 

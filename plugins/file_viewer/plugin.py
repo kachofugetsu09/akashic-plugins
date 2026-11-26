@@ -1,12 +1,14 @@
 """Read-only document workbench using execution-host file access, with PDF/Office reader and Agent live navigation."""
 from agent.plugin_composition import Context
 from plugins.host_execution.contract import FILES
+from plugins.operations.contract import OPERATIONS_V1
 from plugins.tools.contract import TOOLS
 from plugins.ui.contract import UI
 from plugins.working_directory.contract import WORKING_DIRECTORY
 
 from . import dashboard
 from .live import READER_LIVE, ReaderLive
+from .operations import register_operations
 from .tools import register_tools
 
 api_version = 3
@@ -31,3 +33,9 @@ async def apply(ctx: Context) -> None:
         )
 
     _ = await ctx.inject((UI, FILES, WORKING_DIRECTORY, READER_LIVE), register_ui, name="file_viewer-ui")
+
+    # 没有 operations 插件时只是 self 里没有文件浏览命令。
+    async def register_ops(child: Context) -> None:
+        await register_operations(child, ctx)
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")

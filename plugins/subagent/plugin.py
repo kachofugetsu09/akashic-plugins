@@ -54,6 +54,9 @@ from .request import DELEGATION_TOOLS, EXCLUDED_ALWAYS_TOOLS, Request, SpawnInpu
 from .contract import SUBAGENT_PROGRAM, AGENT_RUNNERS
 from .runners import Runners
 from plugins.jobs.contract import JOB_NOTICES
+from plugins.operations.contract import OPERATIONS_V1
+from .control import register_operations
+from .runner_ui import runner_query
 from .runtime import DEFAULT_MAX_ACTIVE, DEFAULT_MAX_DEPTH, DEFAULT_RESULT_CHARS, Subagents
 from .tools import Manage, ManageInput, ReadInput, SendInput, Spawn, SubagentRead, SubagentSend, select_model
 
@@ -147,10 +150,16 @@ async def apply(ctx: Context) -> None:
             configuration_key=SETTINGS,
         )
 
-    _ = await ctx.inject((UI, SETTINGS, SUBAGENT_UI_SERVICE), register_web_app, name="subagent-web-ui")
+    # Workbench 的外部任务停止经 JOB_NOTICES；Dashboard 路由只能 require 本 Fiber 声明的服务。
+    _ = await ctx.inject((UI, SETTINGS, SUBAGENT_UI_SERVICE, JOB_NOTICES), register_web_app, name="subagent-web-ui")
     from plugins.ui.contract import UI_SLOTS
     from .runner_ui import register_ui
     await ctx.inject((UI_SLOTS,), lambda child: register_ui(child, runners, jobs), name="runner-ui")
+    await ctx.inject(
+        (OPERATIONS_V1,),
+        lambda child: register_operations(child, jobs, runners, ctx.require(JOB_NOTICES), runner_query(ctx, runners, jobs)),
+        name="operations",
+    )
     catalog = ctx.require(TOOLS)
     _ = await catalog.declare_group(ctx, description=desc, icon="git-fork")
 

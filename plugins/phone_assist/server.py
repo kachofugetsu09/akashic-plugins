@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import logging
@@ -276,33 +277,74 @@ async def _import_screenshot_b64(ctx: Context, b64_text: str) -> tuple[Attachmen
     return ref, preview
 
 
-def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Event) -> FastAPI:
+@dataclass(frozen=True, slots=True)
+class AssistActions:
+    """浮层路由与 self 命令共用的领域动作；拒绝以 HTTPException（状态码 + 原因）表达。"""
+
+    resume: Callable[[], Awaitable[dict[str, object]]]
+    ask: Callable[[dict[str, Any]], Awaitable[dict[str, object]]]
+    invoke: Callable[[dict[str, Any]], Awaitable[dict[str, object]]]
+    get_invoke: Callable[[str], Awaitable[dict[str, object]]]
+    send: Callable[[dict[str, Any]], Awaitable[dict[str, object]]]
+    history: Callable[[str], Awaitable[dict[str, object]]]
+
+
+# 端侧浮条与半屏浮层的 HTTP 外壳：只读请求体与包响应头，动作本身在 AssistActions 里。
+def _assist_routes(app: FastAPI, actions: AssistActions) -> None:
+    @app.get("/api/phone-assist/resume")
+    async def resume_info() -> JSONResponse:
+        return JSONResponse(await actions.resume(), headers=NO_STORE)
+
+    @app.post("/api/phone-assist/ask")
+    async def quick_ask(request: Request) -> JSONResponse:
+        body = await _read_bounded_json(request, MAX_REQUEST_BODY_BYTES)
+        return JSONResponse(await actions.ask(body), headers=NO_STORE)
+
+    @app.post("/api/phone-assist/invoke")
+    async def invoke(request: Request) -> JSONResponse:
+        body = await _read_bounded_json(request, MAX_REQUEST_BODY_BYTES)
+        return JSONResponse(await actions.invoke(body), headers=NO_STORE)
+
+    @app.get("/api/phone-assist/invoke/{invoke_id}")
+    async def get_invoke(invoke_id: str) -> JSONResponse:
+        return JSONResponse(await actions.get_invoke(invoke_id), headers=NO_STORE)
+
+    @app.post("/api/phone-assist/send")
+    async def send_message(request: Request) -> JSONResponse:
+        body = await _read_bounded_json(request, 256 * 1024)
+        return JSONResponse(await actions.send(body), headers=NO_STORE)
+
+    @app.get("/api/phone-assist/history/{session_id}")
+    async def history(session_id: str) -> JSONResponse:
+        return JSONResponse(await actions.history(session_id), headers=NO_STORE)
+
+
+def create_assist_app(
+    ctx: Context, store: AssistStore, stop_event: asyncio.Event,
+) -> tuple[FastAPI, AssistActions]:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     plugin_dir = Path(__file__).resolve().parent
     sheet_path = plugin_dir / "sheet.html"
 
-    @app.get("/api/phone-assist/resume")
-    async def resume_info() -> JSONResponse:
-        """极轻接口：供原生浮条异步拉取 10 分钟内最近一次受管会话，不阻塞弹出。"""
+    # 极轻接口：供原生浮条异步拉取 10 分钟内最近一次受管会话，不阻塞弹出。
+    async def resume_info() -> dict[str, object]:
         with store._io_lock:
             last = store._last_session
             if last is None:
-                return JSONResponse({"resume": None}, headers=NO_STORE)
+                return {"resume": None}
             import time
             age = time.time() - last.updated_at
             if age < 0 or age > store.resume_window_seconds:
-                return JSONResponse({"resume": None}, headers=NO_STORE)
-            return JSONResponse({
+                return {"resume": None}
+            return {
                 "resume": {
                     "session_id": last.session_id,
                     "title": last.title,
                 }
-            }, headers=NO_STORE)
+            }
 
-    @app.post("/api/phone-assist/ask")
-    async def quick_ask(request: Request) -> JSONResponse:
-        """一步直达接口：原生极简浮条一次请求完成截图导入、建「手机」项目会话与发送消息。"""
-        body = await _read_bounded_json(request, MAX_REQUEST_BODY_BYTES)
+    # 一步直达接口：原生极简浮条一次请求完成截图导入、建「手机」项目会话与发送消息。
+    async def quick_ask(body: dict[str, Any]) -> dict[str, object]:
         text_msg = str(body.get("text") or "").strip()
         if not text_msg:
             raise HTTPException(status_code=400, detail="提问内容不能为空")
@@ -386,13 +428,13 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
         except Exception as err:
             logger.warning("记录 phone-assist 最近会话失败: %s", err)
 
-        return JSONResponse({
+        return {
             "ok": True,
             "session_id": target_sid,
             "message_id": message_id,
             "steered": steered,
             "project_id": project_id,
-        }, headers=NO_STORE)
+        }
 
     @app.get("/api/phone-assist/health")
     async def health() -> JSONResponse:
@@ -410,9 +452,7 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
             raise HTTPException(status_code=404, detail="sheet.html 缺失")
         return HTMLResponse(html, headers=NO_STORE)
 
-    @app.post("/api/phone-assist/invoke")
-    async def invoke(request: Request) -> JSONResponse:
-        body = await _read_bounded_json(request, MAX_REQUEST_BODY_BYTES)
+    async def invoke(body: dict[str, Any]) -> dict[str, object]:
         source = str(body.get("source") or "nav_handle")[:40]
         package_name = str(body.get("package_name") or "").strip()[:160]
         app_label = str(body.get("app_label") or package_name or "当前屏幕").strip()[:80]
@@ -438,18 +478,15 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
         )
         payload = record.public_dict()
         payload["sheet_url"] = f"/api/phone-assist/sheet?invoke={record.invoke_id}"
-        return JSONResponse(payload, headers=NO_STORE)
+        return payload
 
-    @app.get("/api/phone-assist/invoke/{invoke_id}")
-    async def get_invoke(invoke_id: str) -> JSONResponse:
+    async def get_invoke(invoke_id: str) -> dict[str, object]:
         record = store.get_invoke(invoke_id)
         if record is None:
             raise HTTPException(status_code=410, detail="唤起快照已过期，请重新唤起")
-        return JSONResponse(record.public_dict(), headers=NO_STORE)
+        return record.public_dict()
 
-    @app.post("/api/phone-assist/send")
-    async def send_message(request: Request) -> JSONResponse:
-        body = await _read_bounded_json(request, 256 * 1024)
+    async def send_message(body: dict[str, Any]) -> dict[str, object]:
         text = str(body.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=400, detail="提问内容不能为空")
@@ -472,7 +509,7 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
 
         async with record.send_lock:
             if client_req_id and client_req_id in record.seen_client_ids:
-                return JSONResponse(record.seen_client_ids[client_req_id], headers=NO_STORE)
+                return record.seen_client_ids[client_req_id]
 
             catalog = ctx.require(MESSAGE_CATALOG)
             session_exists = await run_file_io(lambda: catalog.exists(target_sid))
@@ -545,28 +582,24 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
             }
             if client_req_id:
                 record.seen_client_ids[client_req_id] = resp_data
-            return JSONResponse(resp_data, headers=NO_STORE)
+            return resp_data
 
-    @app.get("/api/phone-assist/history/{session_id}")
-    async def history(session_id: str) -> JSONResponse:
+    async def history(session_id: str) -> dict[str, object]:
         if not store.is_managed_session(session_id):
             raise HTTPException(status_code=403, detail="会话不在 phone-assist 管理范围内")
         catalog = ctx.require(MESSAGE_CATALOG)
         if not await run_file_io(lambda: catalog.exists(session_id)):
-            return JSONResponse(
-                {"session_id": session_id, "messages": [], "through_seq": -1},
-                headers=NO_STORE,
-            )
+            return {"session_id": session_id, "messages": [], "through_seq": -1}
         reader = catalog.reader(session_id)
         snap = await reader.committed_snapshot_async(after_seq=-1)
         call_names: dict[tuple[str, int], str] = {}
         items = [v for m in snap if (v := _extract_message_view(m, call_names)) is not None]
         if len(items) > MAX_HISTORY_MESSAGES:
             items = items[-MAX_HISTORY_MESSAGES:]
-        return JSONResponse(
-            {"session_id": session_id, "messages": items, "through_seq": snap.through_seq},
-            headers=NO_STORE,
-        )
+        return {"session_id": session_id, "messages": items, "through_seq": snap.through_seq}
+
+    actions = AssistActions(resume_info, quick_ask, invoke, get_invoke, send_message, history)
+    _assist_routes(app, actions)
 
     @app.get("/api/phone-assist/stream/{session_id}")
     async def stream_session(session_id: str, request: Request, after_seq: int = -1) -> StreamingResponse:
@@ -638,12 +671,12 @@ def create_assist_app(ctx: Context, store: AssistStore, stop_event: asyncio.Even
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
-    return app
+    return app, actions
 
 
-async def start_assist_listener(ctx: Context, store: AssistStore) -> None:
+async def start_assist_listener(ctx: Context, store: AssistStore) -> AssistActions:
     stop_event = asyncio.Event()
-    app = create_assist_app(ctx, store, stop_event)
+    app, actions = create_assist_app(ctx, store, stop_event)
     path = socket_alias_path(ctx.data_root, "phone-assist.sock")
     server = AssistListenerServer(
         uvicorn.Config(
@@ -717,3 +750,4 @@ async def start_assist_listener(ctx: Context, store: AssistStore) -> None:
         address=str(path),
         routes=("/api/phone-assist",),
     )
+    return actions

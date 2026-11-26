@@ -1,0 +1,31 @@
+{
+  "version": 3,
+  "explicit_exemption": {
+    "http:computer:GET /api/dashboard/computer/stream-client": {"kind": "view_only", "reason": "画面流客户端脚本（selkies-core.js）静态资产", "decision": ""},
+    "http:computer:GET /api/dashboard/computer/stream-source/{name}": {"kind": "view_only", "reason": "画面流客户端源码与许可证的只读静态资产", "decision": ""},
+    "http:computer:POST /api/dashboard/computer/stream-session": {"kind": "transport", "reason": "为这条画面连接选定 WebRTC/WebSocket 传输并下发 ICE 中继配置，属画面传输协商", "decision": ""},
+    "http:computer:WEBSOCKET /api/dashboard/computer/events": {"kind": "transport", "reason": "浏览器状态与操作位置的只读订阅流；同一状态的快照由 computer.activity 镜像", "decision": ""},
+    "http:computer:WEBSOCKET /api/dashboard/computer/signaling": {"kind": "transport", "reason": "WebRTC 画面信令转发", "decision": ""},
+    "http:computer:WEBSOCKET /api/dashboard/computer/stream": {"kind": "transport", "reason": "WebSocket 画面帧与人的键鼠输入转发；Agent 操作浏览器走 computer 工具", "decision": ""},
+    "http:design:GET /api/dashboard/design/fonts": {"kind": "view_only", "reason": "画布编辑器回退字体的 Google Fonts 代取字节，只供浏览器渲染；不是用户动作", "decision": ""},
+    "http:design:WEBSOCKET /api/dashboard/design/live": {"kind": "transport", "reason": "向开着的画布推送新修订与 Agent 正在编辑的文档，只出不进的通知通道", "decision": ""},
+    "http:file_viewer:GET /api/dashboard/file_viewer/raw": {"kind": "view_only", "reason": "给浏览器渲染 PDF/Office/图片与下载用的原始字节流；可读的文本内容由 file_viewer.read 镜像", "decision": ""},
+    "http:file_viewer:WEBSOCKET /api/dashboard/file_viewer/live": {"kind": "transport", "reason": "向开着的文件标签推送 Agent 打开的文件与定位锚点，只出不进的通知通道", "decision": ""},
+    "http:phone_assist:GET /api/phone-assist/health": {"kind": "transport", "reason": "手机浮层连通性健康探针", "decision": ""},
+    "http:phone_assist:GET /api/phone-assist/sheet": {"kind": "view_only", "reason": "半屏浮层 WebView 的静态 HTML 页面", "decision": ""},
+    "http:phone_assist:GET /api/phone-assist/stream/{session_id}": {"kind": "transport", "reason": "半屏浮层的会话消息与逐字草稿 SSE 订阅流；同一会话的快照由 phone_assist.history 镜像", "decision": ""},
+    "http:phone_use:GET /api/phone/apk": {"kind": "view_only", "reason": "下发仓库内打包的 Akashic Shell APK 静态文件，供手机安装", "decision": ""},
+    "http:phone_use:GET /api/phone/rules": {"kind": "transport", "reason": "端侧订阅引擎拉取事件规则表的设备通道；规则的增删改走 device_subscribe 工具", "decision": ""},
+    "http:phone_use:POST /api/phone/events": {"kind": "transport", "reason": "Android 端侧订阅引擎批量上报原始设备事件", "decision": ""},
+    "http:phone_use:POST /api/phone/reply": {"kind": "transport", "reason": "Android Shell 回传 RPC 执行结果与状态变更（SSE 通道的回程）", "decision": ""},
+    "http:phone_use:POST /api/phone/stream": {"kind": "transport", "reason": "Android Shell 建立接收 RPC 指令的 SSE 长连接", "decision": ""},
+    "http:phone_use:WEBSOCKET /api/phone/ws#hello": {"kind": "transport", "reason": "Android Shell 的 WebSocket 设备通道（hello/RPC/心跳）", "decision": ""},
+    "http:phone_use:WEBSOCKET /api/phone/ws#ping": {"kind": "transport", "reason": "Android Shell 的 WebSocket 设备通道（hello/RPC/心跳）", "decision": ""},
+    "http:terminal:WEBSOCKET /api/dashboard/terminal/attach": {"kind": "user_only", "reason": "交互终端的输入与输出是用户本人的 shell，不进入 Agent 上下文，也不让 Agent 代为键入", "decision": "ADR-0122"},
+    "http:visuals:GET /visuals/frame.html": {"kind": "view_only", "reason": "render_visual 隔离沙箱 iframe 的静态入口页，不读取附件或业务状态", "decision": ""},
+    "ws:phone_use/ack": {"kind": "transport", "reason": "Android Shell 在设备通道上回的 RPC 受理确认帧", "decision": ""},
+    "ws:phone_use/response": {"kind": "transport", "reason": "Android Shell 在设备通道上回的 RPC 执行结果帧", "decision": ""},
+    "ws:phone_use/state": {"kind": "transport", "reason": "Android Shell 在设备通道上主动上报的显示/画中画状态帧", "decision": ""}
+  },
+  "agent_only": {}
+}

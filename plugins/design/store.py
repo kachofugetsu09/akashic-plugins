@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
 MAX_DOCUMENTS = 50
 MAX_NAME = 80
+DOCUMENT_ID = re.compile(r"[0-9a-f]{16}")
 
 
 class DesignStoreError(RuntimeError):

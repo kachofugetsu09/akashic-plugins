@@ -31,7 +31,8 @@ from plugins.turn_projection.contract import TURN_PROJECTION, TurnProjection
 from .bridge import PhoneBridge, PhoneNodeError
 from .contract import PHONE_BRIDGE, PhoneScreenSnapshot
 from .events import PhoneEventStore, PhoneInformationProvider, StoredPhoneEvent
-from .server import start_phone_listener
+from .server import device_views, start_phone_listener
+from plugins.operations.contract import OPERATIONS_V1, OperationRequest, OperationResult, OperationSpec
 from .tools import (
     DeviceSubscribeInput,
     DeviceSubscribeTool,
@@ -436,6 +437,18 @@ async def _open_action(ctx: Context, state: Mapping[str, object]) -> AsyncIterat
         yield _PhoneActionTool(control, state["control_binding"], ctx.require(TURN_PROJECTION))
 
 
+# 没有 operations 插件时只是 self 里没有设备列表命令；其余手机入口都是端侧设备通道。
+async def _register_operations(ctx: Context, bridge: PhoneBridge) -> None:
+    async def devices(_req: OperationRequest) -> OperationResult:
+        items = device_views(bridge)
+        return OperationResult(True, f"{len(items)} 台在线 Android 设备", data={"devices": items})
+
+    _ = await ctx.require(OPERATIONS_V1).register(ctx, OperationSpec(
+        operation_id="phone_use.devices", path=("phone", "devices"), summary="列出在线的 Android 手机端侧设备",
+        handler=devices, mirrors=("http:phone_use:GET /api/phone/devices",),
+    ))
+
+
 async def apply(ctx: Context) -> None:
     """注册按需加载的 Phone 工具组、无线调试 Bridge 监听器、事件订阅存储与 Turn 收尾跟随器。"""
     from datetime import datetime
@@ -486,6 +499,8 @@ async def apply(ctx: Context) -> None:
         event_store=event_store,
         on_events_ingested=on_events_ingested,
     )
+
+    _ = await ctx.inject((OPERATIONS_V1,), lambda child: _register_operations(child, bridge), name="operations")
 
     devices_tool = PhoneDevicesTool(bridge)
     events_tool = PhoneEventsTool(event_store)

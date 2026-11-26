@@ -24,6 +24,8 @@ from extra_index import build_index  # noqa: E402
 # 与 Core 相同的相对布局：这些目录里的内容覆盖到 Core 检出的同名位置。
 OVERLAY_DIRS = ("plugins", "frontend/plugins", "tests")
 EXTRA_TIERS_FILE = "extra_tiers.toml"
+# 用户界面入口与 Agent operation 一对一门禁的 extra 清单；合成树里与 Core 清单合并检查。
+PARITY_FILE = "interaction_parity.extra.json"
 _COMMIT_ENV = {
     "GIT_AUTHOR_NAME": "extra-ci", "GIT_AUTHOR_EMAIL": "extra-ci@akashic.invalid",
     "GIT_COMMITTER_NAME": "extra-ci", "GIT_COMMITTER_EMAIL": "extra-ci@akashic.invalid",
@@ -57,8 +59,9 @@ def compose(core: Path, ref: str, out: Path) -> None:
                 shutil.rmtree(target, ignore_errors=True)
                 shutil.copytree(source, target)
     # 3. 层级声明文件（如有）放到合成树根目录，边界门禁自动读取。
-    if (ROOT / EXTRA_TIERS_FILE).is_file():
-        shutil.copy(ROOT / EXTRA_TIERS_FILE, out / EXTRA_TIERS_FILE)
+    for name in (EXTRA_TIERS_FILE, PARITY_FILE):
+        if (ROOT / name).is_file():
+            shutil.copy(ROOT / name, out / name)
     # 4. 提交成单个提交，供 Core 的脚本按提交读取。
     _ = run("git", "init", "-q", "-b", "compose", cwd=out)
     _ = run("git", "add", "-A", "-f", cwd=out)
@@ -233,6 +236,10 @@ def verify(
     if scope in ("all", "python", "static"):
         if not skip_boundary:
             tasks.append(("Plugin boundary gate", [[sys.executable, "scripts/plugin_boundary.py", "check"]], synth))
+        tasks.append(("User interface and agent operations stay one-to-one", [
+            [sys.executable, "scripts/check_interaction_parity.py", "self-test"],
+            [sys.executable, "scripts/check_interaction_parity.py", "check"],
+        ], synth))
         tasks.append(("Check bundled wheels", [[
             sys.executable, str(ROOT / "scripts/bundled_wheels.py"), "check", "--lock", str(ROOT / "wheels.lock.json"),
         ]], ROOT))

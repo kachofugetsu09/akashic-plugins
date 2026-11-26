@@ -95,6 +95,27 @@ def _sse_event(name: str, payload: dict[str, object]) -> bytes:
     return f"event: {name}\ndata: {data}\n\n".encode("utf-8")
 
 
+# 在线设备的同一份视图：设备接口与 self 命令都用它。
+def device_views(bridge: PhoneBridge) -> list[dict[str, object]]:
+    return [
+        {
+            "device_id": d.device_id,
+            "device_name": d.device_name,
+            "model": d.model,
+            "sdk_int": d.sdk_int,
+            "shell_version": d.shell_version,
+            "display_mode": d.display_mode,
+            "virtual_display_id": d.virtual_display_id,
+            "own_focus": d.own_focus,
+            "steal_top_focus_disabled": d.steal_top_focus_disabled,
+            "pip_state": d.pip_state,
+            "active_packages": list(d.active_packages),
+            "takeover_reason": d.takeover_reason,
+        }
+        for d in bridge.list_devices()
+    ]
+
+
 def create_phone_app(
     bridge: PhoneBridge,
     *,
@@ -127,24 +148,7 @@ def create_phone_app(
 
     @app.get("/api/phone/devices")
     async def list_devices() -> JSONResponse:
-        items = [
-            {
-                "device_id": d.device_id,
-                "device_name": d.device_name,
-                "model": d.model,
-                "sdk_int": d.sdk_int,
-                "shell_version": d.shell_version,
-                "display_mode": d.display_mode,
-                "virtual_display_id": d.virtual_display_id,
-                "own_focus": d.own_focus,
-                "steal_top_focus_disabled": d.steal_top_focus_disabled,
-                "pip_state": d.pip_state,
-                "active_packages": list(d.active_packages),
-                "takeover_reason": d.takeover_reason,
-            }
-            for d in bridge.list_devices()
-        ]
-        return JSONResponse({"devices": items})
+        return JSONResponse({"devices": device_views(bridge)})
 
     @app.post("/api/phone/stream")
     async def node_sse_stream(request: Request) -> StreamingResponse:

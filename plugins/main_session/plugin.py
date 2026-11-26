@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from agent.plugin_composition import Context
+from core.common.file_io import run_file_io
 from plugins.ledger.contract import (
     MESSAGE_CATALOG,
     OWNER_STATE,
@@ -17,6 +18,7 @@ from plugins.ledger.contract import (
     OwnerTransaction,
     is_user_input,
 )
+from plugins.operations.contract import OPERATIONS_V1, OptionSpec, QueryMirror, register_query_mirrors
 from plugins.ui.contract import UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest, session_preview
 
 api_version = 3
@@ -175,6 +177,19 @@ def _query(pointer: Pointer, method: str, payload: dict[str, object]) -> dict[st
     raise PluginUiRpcInvalidRequest(f"不支持的查询：{method}")
 
 
+_SESSION = OptionSpec("session_id", "Web 聊天会话 ID（akashic: 前缀）", required=True)
+# 与界面查询一一对应；参数名即界面载荷键。
+_MIRRORS = (
+    QueryMirror("destination.load", ("main-session", "show"), "读取侧栏顶部 Akashic 指向的对话"),
+    QueryMirror("guide.read", ("main-session", "guide"), "读取是否该提示选择侧栏顶部对话及推荐的候选"),
+    QueryMirror("candidates.list", ("main-session", "candidates"), "列出可放到侧栏顶部的 Web 对话候选"),
+    QueryMirror("pointer.new", ("main-session", "new"), "让侧栏顶部改为等待一段新对话"),
+    QueryMirror("pointer.dismiss", ("main-session", "dismiss"), "不再提示选择侧栏顶部对话（只在还没问过时生效）"),
+    QueryMirror("pointer.set", ("main-session", "set"), "把一段已有的 Web 对话放到侧栏顶部", options=(_SESSION,)),
+    QueryMirror("pointer.adopt", ("main-session", "adopt"), "把刚开的新对话接入等待中的侧栏顶部位置", options=(_SESSION,)),
+)
+
+
 async def apply(ctx: Context) -> None:
     pointer = Pointer(ctx.require(OWNER_STATE).open(ctx), ctx.require(MESSAGE_CATALOG))
 
@@ -185,3 +200,13 @@ async def apply(ctx: Context) -> None:
         ctx, PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("navigation.destinations",)),
         query=query,
     )
+
+    # 同步读写放进有界文件 worker，和界面查询一样不阻塞事件循环。
+    async def query_off_loop(method: str, payload: dict[str, object], *,
+                             session_id: str | None, turn_id: str | None) -> dict[str, object]:
+        return await run_file_io(lambda: _query(pointer, method, payload))
+
+    async def register_ops(child: Context) -> None:
+        await register_query_mirrors(child, child.require(OPERATIONS_V1), query=query_off_loop, mirrors=_MIRRORS)
+
+    _ = await ctx.inject((OPERATIONS_V1,), register_ops, name="operations")
