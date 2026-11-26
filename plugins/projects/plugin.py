@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 import re
 from typing import cast
 from pathlib import Path
+from collections.abc import Callable
 from core.common.file_io import run_file_io
 
 from plugins.working_directory.contract import WORKING_DIRECTORY
+from .operations import ProjectCreation
 
 from agent.plugin_composition import Context
 from plugins.ui.contract import UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest
@@ -42,8 +44,20 @@ class Projects:
         projects = [_project_row(key[len(_PREFIX):], dict(record.value)) for key, record in rows]
         return sorted(projects, key=lambda row: cast(str, row["created_at"]))
 
+    @property
+    def store(self) -> OwnerStore:
+        return self._store
+
     def create(self, project_id: str, project_name: str, directory: str | None = None) -> dict[str, object]:
-        """由请求的稳定 ID 创建一次；响应丢失后同名重放返回原记录。"""
+        try:
+            return self._store.transact(self.writer(project_id, project_name, directory))
+        except MessageConflict as error:
+            raise PluginUiRpcInvalidRequest("项目正在并发创建，请重试") from error
+
+    # 由请求的稳定 ID 创建一次；响应丢失后同名重放返回原记录。可单独提交，也可进依赖插件的联合事务。
+    def writer(
+        self, project_id: str, project_name: str, directory: str | None = None,
+    ) -> Callable[[OwnerTransaction], dict[str, object]]:
         if _PROJECT_ID.fullmatch(project_id) is None:
             raise PluginUiRpcInvalidRequest("项目 ID 无效")
         name = _check_name(project_name)
@@ -63,10 +77,7 @@ class Projects:
                 return _project_row(project_id, dict(current.value))
             _ = transaction.save(_PREFIX + project_id, value, expected_version=None)
             return _project_row(project_id, value)
-        try:
-            return self._store.transact(save)
-        except MessageConflict as error:
-            raise PluginUiRpcInvalidRequest("项目正在并发创建，请重试") from error
+        return save
 
     def exists(self, project_id: str) -> bool:
         return self._store.read(_PREFIX + project_id) is not None
@@ -166,24 +177,10 @@ async def apply(ctx: Context) -> None:
               turn_id: str | None) -> dict[str, object]:
         if method == "project.list" and not payload:
             return {"dimension": DIMENSION, "items": await run_file_io(projects.list)}
-        if method == "project.create" and set(payload) in (
-            {"project_id", "name"}, {"project_id", "name", "directory"},
-        ):
-            project_id, project_name = _project_id(payload), _check_name(payload["name"])
-            directory = payload.get("directory")
-            if directory is not None:
-                if not isinstance(directory, str) or not Path(directory).is_absolute():
-                    raise PluginUiRpcInvalidRequest("请选择执行主机上的绝对目录")
-                # A replay acknowledges the original commit even if its path moved.
-                if not await run_file_io(lambda: projects.exists(project_id)):
-                    with ctx.borrow(WORKING_DIRECTORY) as directories:
-                        if directories is None:
-                            raise PluginUiRpcInvalidRequest("当前组合没有可用的目录工具")
-                        try:
-                            _ = await directories.check_directory(directory)
-                        except ValueError as error:
-                            raise PluginUiRpcInvalidRequest(str(error)) from error
-            return await run_file_io(lambda: projects.create(project_id, project_name, directory))
+        if method == "project.create" and {"project_id", "name"} <= set(payload) <= {
+            "project_id", "name", "directory", "extensions",
+        }:
+            return await create_from_ui(payload)
         if method == "project.rename" and set(payload) == {"project_id", "name"}:
             project_id, project_name = _project_id(payload), _check_name(payload["name"])
             return await run_file_io(lambda: projects.update(project_id, name=project_name))
@@ -217,6 +214,24 @@ async def apply(ctx: Context) -> None:
                     return dict(await directories.browse(path, after=after))
         raise PluginUiRpcInvalidRequest(f"不支持的项目查询：{method}")
 
+    creation = ProjectCreation(ctx, projects)
+
+    # 界面新建与 self project create 是同一个操作：带附加设置时经操作总线，与项目记录同一事务提交。
+    async def create_from_ui(payload: dict[str, object]) -> dict[str, object]:
+        project_id, project_name = _project_id(payload), _check_name(payload["name"])
+        directory = payload.get("directory")
+        if directory is not None and not isinstance(directory, str):
+            raise PluginUiRpcInvalidRequest("请选择执行主机上的绝对目录")
+        extensions = payload.get("extensions") or {}
+        if not isinstance(extensions, dict):
+            raise PluginUiRpcInvalidRequest("附加设置格式无效")
+        if not extensions:
+            return await creation.create(project_id, project_name, directory, ())
+        return await creation.create_with_extensions(
+            project_id, project_name, directory, cast(dict[str, object], extensions),
+        )
+
+    await creation.register_operations(query)
     _ = await ctx.require(UI_SLOTS).register_plugin_ui(
         ctx, PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("navigation.groups",)), query=query,
     )

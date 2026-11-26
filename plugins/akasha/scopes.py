@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import hashlib
 import json
@@ -104,8 +104,20 @@ class ScopePolicies:
     def set(self, dimension: str, value: str, learn: LearnPolicy, *, recall: bool = True) -> LearnPolicy:
         if learn not in LEARN_POLICIES or type(recall) is not bool:
             raise ValueError("Akasha 记忆策略无效")
+        try:
+            return self._store.transact(self.writer(dimension, value, learn, recall=recall))
+        except MessageConflict as error:
+            raise PolicyLocked("该范围的记忆策略正在被并发写入") from error
+
+    # 同一 set-once 写入交给调用者的事务：独立设置走 set，随项目创建时进主记录的联合事务。
+    def writer(
+        self, dimension: str, value: str, learn: LearnPolicy, *, recall: bool = True,
+    ) -> Callable[[OwnerTransaction], LearnPolicy]:
+        if learn not in LEARN_POLICIES or type(recall) is not bool:
+            raise ValueError("Akasha 记忆策略无效")
         _ = SessionAttributes(scope=((dimension, value),))
         key = _policy_key(dimension, value)
+
         def save(transaction: OwnerTransaction) -> LearnPolicy:
             # 1. 同值重放幂等；不同值说明策略已固定。
             current = transaction.read(key)
@@ -119,10 +131,11 @@ class ScopePolicies:
                 raise PolicyLocked("该范围已有对话，记忆策略不能再改变")
             _ = transaction.save(key, {"learn": learn, "recall": recall}, expected_version=None)
             return learn
-        try:
-            return self._store.transact(save)
-        except MessageConflict as error:
-            raise PolicyLocked("该范围的记忆策略正在被并发写入") from error
+        return save
+
+    @property
+    def store(self) -> OwnerStore:
+        return self._store
 
     def route(self, session_id: str) -> Route:
         """Route each axis; any scope may disable learning or recall."""

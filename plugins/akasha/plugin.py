@@ -68,6 +68,7 @@ from .application.cycle import MemoryCycle
 from .infrastructure.consumption import Consumption, load_message_nodes, load_message_sessions
 from .inspector import RecallInspector
 from .interest import SEMANTIC_INTEREST, Embed, SemanticInterest
+from .operations import register_operations
 from .learning import AKASHA_LEARNING, Learning, LearningConfig
 from .recall_tool import FetchArguments, FetchTool, RecallArguments, RecallTool, check_fetch, check_recall
 from .recalls import RecallRecords, RecallRecordsRead
@@ -705,6 +706,8 @@ async def run(ctx: Context, interest: Interest) -> None:
     async def run_rebuild() -> CommandResult:
         """操作者显式确认后全量重建。"""
         return CommandResult("success", "Akasha 重建完成：" + await rebuild_now())
+
+    await register_operations(ctx, query=query, policies=policies, reindex=run_rebuild)
 
     def _note_replay(payload: Mapping[str, object]) -> None:
         """把重放状态写进 memory root；这是安装期唯一稳定可读的证据面。"""
