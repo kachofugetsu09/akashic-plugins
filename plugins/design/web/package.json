@@ -1,0 +1,15 @@
+{
+  "name": "@akashic-plugins/design",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@open-pencil/core": "0.16.0",
+    "@open-pencil/design-jsx": "0.16.0",
+    "@open-pencil/dom-css": "0.16.0",
+    "@open-pencil/scene-graph": "0.16.0",
+    "@open-pencil/vue": "0.16.0",
+    "@valibot/to-json-schema": "1.8.0",
+    "canvaskit-wasm": "0.41.1",
+    "vue": "3.5.44"
+  }
+}

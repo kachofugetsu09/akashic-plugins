@@ -1,0 +1,10 @@
+{
+  "name": "@akashic-plugins/file-viewer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@silurus/ooxml": "^0.90.2",
+    "highlight.js": "11.11.1",
+    "pdfjs-dist": "^6.5.438"
+  }
+}

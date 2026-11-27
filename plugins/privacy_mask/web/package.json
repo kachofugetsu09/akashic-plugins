@@ -1,0 +1,8 @@
+{
+  "name": "@akashic-plugins/privacy-mask",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "modern-screenshot": "^4.6.8"
+  }
+}
