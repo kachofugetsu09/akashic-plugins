@@ -33,13 +33,20 @@ async def apply(ctx: Context) -> None:
         del method, payload, session_id, turn_id
         return {}
 
-    _ = await ctx.require(UI_SLOTS).register_plugin_ui(
-        ctx,
+    ui_def = (
         PluginUiDefinition(
             module="plugin_ui.js",
             stylesheet="plugin_ui.css",
             slots=("icon.provider",),
             assets_dir="static/chunks",
-        ),
-        query=query,
+            client_kernel=True,
+        )
+        if any(f.name == "client_kernel" for f in dataclasses.fields(PluginUiDefinition))
+        else PluginUiDefinition(
+            module="plugin_ui.js",
+            stylesheet="plugin_ui.css",
+            slots=("icon.provider",),
+            assets_dir="static/chunks",
+        )
     )
+    _ = await ctx.require(UI_SLOTS).register_plugin_ui(ctx, ui_def, query=query)

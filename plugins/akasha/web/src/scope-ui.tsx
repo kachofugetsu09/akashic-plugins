@@ -178,3 +178,16 @@ export const scopeMetaProvider: ScopeMetaProvider = {
     return output;
   },
 };
+
+/** 供 akasha 通过 ChatKernel 向 projects 自有子槽贡献的记忆策略块，直接复用已批量拉取的 meta 数据。 */
+export function renderAkashaHoverSection(props: { meta?: ScopeMetaItem }) {
+  const item = props.meta;
+  if (!item) return null;
+  return <div className="group-hover-card__section" data-akasha-kernel-section="true">
+    <div className="group-hover-card__kicker">
+      <span className={`group-hover-card__dot group-hover-card__dot--${item.tone ?? "muted"}`} aria-hidden="true" />
+      <span className="group-hover-card__policy">{item.label}</span>
+    </div>
+    {item.description ? <p className="group-hover-card__desc">{item.description}</p> : null}
+  </div>;
+}
