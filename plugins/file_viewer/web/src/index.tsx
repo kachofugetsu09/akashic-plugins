@@ -788,6 +788,17 @@ function FileManagerApp({
   );
 
   openFileRef.current = openFile;
+  // self 的 file_viewer.close 推来的回目录：与「返回目录」按钮同一个动作。
+  const returnToBrowseRef = useRef<() => void>(() => {});
+  returnToBrowseRef.current = () => {
+    if (stateRef.current.mode !== "read") return;
+    setDirection(-1);
+    setLeavingTargetPath(stateRef.current.path);
+    setMode("browse");
+    if (stateRef.current.directory) {
+      view.setTitle?.(`文件 · ${basename(stateRef.current.directory)}`.slice(0, 80));
+    }
+  };
 
   const refreshSessionRoots = useCallback(async () => {
     try {
@@ -898,6 +909,9 @@ function FileManagerApp({
         anchor: hasAnchor ? anchor : null,
         dir: 1,
       });
+    }, () => {
+      if (disposedRef.current) return;
+      returnToBrowseRef.current();
     });
     liveLinkRef.current = live;
     live.connectSession(stateRef.current.session);
@@ -1305,6 +1319,12 @@ function FileManagerApp({
     if (kind === "other") return;
     void openFile(item.path, { dir: 1 });
   };
+
+  // 视图回报：换文件或回到目录时告诉后端，self 读得到用户正在看什么。
+  useEffect(() => {
+    const target = mode === "read" ? path : directory;
+    if (target) liveLinkRef.current?.report({ mode, path: target });
+  }, [mode, path, directory]);
 
   const handleReturnToBrowse = () => {
     if (mode === "read") {

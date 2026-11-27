@@ -24,16 +24,34 @@ export type LiveOpenEvent = {
   note?: string;
 };
 
-/** 维持到后端 /api/dashboard/file_viewer/live 的会话级 WebSocket，接收 Agent 主动打开与定位指令。 */
+/** 标签回报给后端的当前视图：self 的 file_viewer.state 读的就是它。 */
+export type LiveView = { mode: "browse" | "read"; path: string };
+
+/** 维持到后端 /api/dashboard/file_viewer/live 的会话级 WebSocket：收打开、定位与回目录指令，回报当前视图。 */
 export class ReaderLiveLink {
   private socket: WebSocket | null = null;
   private timer = 0;
   private session: string | null = null;
+  private view: LiveView | null = null;
 
   constructor(
     private readonly ctx: WebHostContextV1,
-    private readonly onOpenEvent: (event: LiveOpenEvent) => void
+    private readonly onOpenEvent: (event: LiveOpenEvent) => void,
+    private readonly onCloseEvent: () => void
   ) {}
+
+  // 视图变了就回报；没连上时记着，连上后补发。
+  report(view: LiveView): void {
+    if (this.view && this.view.mode === view.mode && this.view.path === view.path) return;
+    this.view = view;
+    this.sendView();
+  }
+
+  private sendView(): void {
+    const socket = this.socket;
+    if (!this.view || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: "view", ...this.view }));
+  }
 
   connectSession(session: string | null): void {
     if (session === this.session && this.socket) return;
@@ -62,12 +80,17 @@ export class ReaderLiveLink {
       return;
     }
     this.socket = socket;
+    socket.addEventListener("open", () => {
+      if (this.socket === socket) this.sendView();
+    });
     socket.addEventListener("message", (event) => {
       if (this.socket !== socket) return;
       try {
-        const parsed = JSON.parse(String(event.data)) as LiveOpenEvent;
+        const parsed = JSON.parse(String(event.data)) as LiveOpenEvent | { type: "close" };
         if (parsed && parsed.type === "open" && typeof parsed.path === "string" && parsed.path) {
           this.onOpenEvent(parsed);
+        } else if (parsed && parsed.type === "close") {
+          this.onCloseEvent();
         }
       } catch {
         // 忽略非法消息

@@ -8,12 +8,13 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.plugin_composition import Context
-from plugins.host_execution.contract import FILES, Files
+from plugins.host_execution.contract import FILES
 from plugins.ledger.contract import ContentPart, Input, json_value
 from plugins.tools.contract import TOOLS, CallSource, Result
-from plugins.working_directory.contract import WORKING_DIRECTORY, WorkingDirectories
+from plugins.working_directory.contract import WORKING_DIRECTORY
 
-from .live import READER_LIVE, ReaderLive
+from .live import READER_LIVE
+from .navigate import Navigator, OpenTarget
 
 GROUP = (
     "侧边栏文档阅读器：在用户工作台的“文件”标签里主动打开并定位 PDF、Word (.docx)、Excel (.xlsx)、"
@@ -40,11 +41,8 @@ class OpenDocumentArgs(BaseModel):
 class OpenDocumentTool:
     idempotent = False
 
-    def __init__(self, live: ReaderLive, files: Files, directories: WorkingDirectories, workspace: str | None) -> None:
-        self._live = live
-        self._files = files
-        self._directories = directories
-        self._workspace = workspace
+    def __init__(self, navigator: Navigator) -> None:
+        self._navigator = navigator
 
     async def prepare(self, arguments: Mapping[str, object], source: CallSource | None = None) -> Mapping[str, object] | str:
         if source is None:
@@ -64,74 +62,21 @@ class OpenDocumentTool:
             req = OpenDocumentArgs.model_validate(values)
         except Exception as error:
             return Result("error", (ContentPart("text", f"参数无效：{error}"),))
-
-        session = identity["session"]
-        raw_path = req.path.strip()
-        if any(ord(ch) < 32 for ch in raw_path) or raw_path.startswith("//"):
-            return Result("error", (ContentPart("text", "路径格式无效"),))
-
-        resolved_path, err = await self._resolve_and_verify(session, raw_path)
-        if err is not None or resolved_path is None:
-            return Result("error", (ContentPart("text", err or "无法解析文件路径"),))
-
-        delivered = await self._live.open_document(
-            session,
-            turn=identity["turn"],
-            path=resolved_path,
-            page=req.page,
-            line=req.line,
-            sheet=req.sheet,
-            search=req.search,
-            note=req.note,
-        )
-        anchors: list[str] = []
-        if req.page is not None:
-            anchors.append(f"第 {req.page} 页")
-        if req.line is not None:
-            anchors.append(f"第 {req.line} 行")
-        if req.sheet:
-            anchors.append(f"工作表「{req.sheet}」")
-        if req.search:
-            anchors.append(f"定位「{req.search}」")
-        anchor_text = f"（{'，'.join(anchors)}）" if anchors else ""
-        if delivered > 0:
-            msg = f"已在用户侧边栏打开 {resolved_path}{anchor_text}。"
-        else:
-            msg = f"已确认文件可读：{resolved_path}{anchor_text}（当前网页侧边栏未建立连接，用户打开“文件”标签后可查看）。"
-        return Result("success", (ContentPart("text", msg),))
+        done = await self._navigator.open(identity["session"], identity["turn"], OpenTarget(
+            req.path, page=req.page, line=req.line, sheet=req.sheet, search=req.search, note=req.note))
+        return Result("success" if done.ok else "error", (ContentPart("text", done.message),))
 
     async def query(self, key: str) -> Result | None:
         return None
 
-    async def _resolve_and_verify(self, session: str, raw_path: str) -> tuple[str | None, str | None]:
-        workdir = self._directories.snapshot(session).path if session else None
-        base = workdir or self._workspace
-        async with self._files.paths() as reader:
-            if session and workdir and not raw_path.startswith(("/", "~")):
-                try:
-                    target, _ = await self._directories.resolve_target(session, raw_path)
-                except ValueError as error:
-                    return None, str(error)
-            else:
-                resolved = await reader.read("resolve", raw_path, base_dir=base)
-                if resolved.status != "available" or not resolved.path:
-                    return None, f"无法访问路径：{raw_path}（{resolved.status}）"
-                target = resolved.path
-            inspected = await reader.read("inspect", target)
-            if inspected.status != "available":
-                return None, f"文件不可访问：{target}（{inspected.status}）"
-            if inspected.kind != "file":
-                return None, f"目标不是普通文件：{target}"
-            return inspected.path or target, None
+
+# ctx 须能解析执行主机文件、工作目录与实时通道（插件自身的 Context）。
+def navigator_for(ctx: Context) -> Navigator:
+    return Navigator(ctx.require(READER_LIVE), ctx.require(FILES), ctx.require(WORKING_DIRECTORY), str(ctx.runtime.workspace))
 
 
 async def register_tools(ctx: Context) -> None:
-    tool = OpenDocumentTool(
-        ctx.require(READER_LIVE),
-        ctx.require(FILES),
-        ctx.require(WORKING_DIRECTORY),
-        str(ctx.runtime.workspace),
-    )
+    tool = OpenDocumentTool(navigator_for(ctx))
     catalog = ctx.require(TOOLS)
     _ = await catalog.declare_group(ctx, description=GROUP, icon="file-text")
 

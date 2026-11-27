@@ -41,6 +41,9 @@ function sendToParent(message: ReaderFromFrame): void {
   }
 }
 
+// 阅读时底部工具条淡出：指针停下或开始滚动这么久后收起，动一下指针、轻点或按键就回来。
+const CHROME_IDLE_MS = 2400;
+
 class DocumentReaderApp {
   private readonly shell = document.createElement("div");
   private readonly stage = document.createElement("div");
@@ -78,6 +81,7 @@ class DocumentReaderApp {
   private docReady = false;
   private pendingAnchor: DocumentAnchor | null = null;
   private toastTimer = 0;
+  private chromeTimer = 0;
 
   constructor(root: HTMLElement) {
     this.shell.className = "dr-shell";
@@ -111,6 +115,7 @@ class DocumentReaderApp {
     );
     root.replaceChildren(this.shell);
     this.bindEvents();
+    this.bindChrome();
     sendToParent({ channel: READER_CHANNEL, type: "ready" });
   }
 
@@ -256,6 +261,34 @@ class DocumentReaderApp {
       this.rangeQuoteBtn,
       this.darkBtn
     );
+  }
+
+  // 工具条的显隐：指针移动、轻点、键盘都会唤回；滚动阅读时直接收起。
+  private bindChrome(): void {
+    this.shell.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "mouse") this.wakeChrome();
+    });
+    this.shell.addEventListener("pointerdown", () => this.wakeChrome());
+    this.shell.addEventListener("keydown", () => this.wakeChrome());
+    this.shell.addEventListener("focusin", () => this.wakeChrome());
+    // scroll 不冒泡：在捕获阶段统一接住舞台与 Office 宿主各自的滚动。
+    this.shell.addEventListener("scroll", () => this.idleChrome(), { capture: true, passive: true });
+    this.wakeChrome();
+  }
+
+  private wakeChrome(): void {
+    this.shell.classList.remove("is-chrome-idle");
+    window.clearTimeout(this.chromeTimer);
+    this.chromeTimer = window.setTimeout(() => this.idleChrome(), CHROME_IDLE_MS);
+  }
+
+  // 正在用的工具条不收：指针悬在上面、焦点在里面、框选中、查找栏开着、文档还没加载好。
+  private idleChrome(): void {
+    const busy = this.pill.matches(":hover, :focus-within") || this.snipMode || !this.docReady
+      || this.searchBar.classList.contains("is-open") || this.drawer.classList.contains("is-open");
+    if (busy) return;
+    window.clearTimeout(this.chromeTimer);
+    this.shell.classList.add("is-chrome-idle");
   }
 
   private bindEvents(): void {
