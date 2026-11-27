@@ -306,7 +306,7 @@ function describeSpawn(block: ToolSummaryFacts): ToolTaskSummary | null {
 function SpawnResultView({ result }: { result: SpawnResult }) {
   return result.jobId ? (
     <p className="subagent-tool-result">后台任务 <code>{result.jobId}</code>，完成后会回传当前会话。</p>
-  ) : <ToolText text={result.body || "子任务没有输出文字。"} tail={false} className="tool-result" />;
+  ) : <ToolText text={result.body || "子任务没有输出文字。"} tail={false} />;
 }
 
 function LineageHeaderMeta({ context }: { context: PluginUiContext<"header.meta"> }) {
