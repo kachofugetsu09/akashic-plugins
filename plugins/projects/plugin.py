@@ -31,6 +31,7 @@ DIMENSION = "project"
 _PREFIX = "project:"
 _NAME_LIMIT = 80
 _PROJECT_ID = re.compile(r"p_[0-9a-f]{32}")
+_ICON_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
 class Projects:
@@ -83,14 +84,16 @@ class Projects:
         return self._store.read(_PREFIX + project_id) is not None
 
     def update(self, project_id: str, **changes: object) -> dict[str, object]:
-        if set(changes) - {"name", "archived"}:
-            raise PluginUiRpcInvalidRequest("项目更新只允许改名或归档")
+        if set(changes) - {"name", "archived", "icon"}:
+            raise PluginUiRpcInvalidRequest("项目更新只允许改名、更换图标或归档")
         key = _PREFIX + project_id
         def save(transaction: OwnerTransaction) -> dict[str, object]:
             current = transaction.read(key)
             if current is None:
                 raise PluginUiRpcInvalidRequest("项目不存在")
             value = {**dict(current.value), **changes}
+            if "icon" in changes and changes["icon"] is None:
+                value.pop("icon", None)
             _ = transaction.save(key, value, expected_version=current.version)
             return _project_row(project_id, value)
         try:
@@ -139,6 +142,19 @@ def _check_name(value: object) -> str:
     return value.strip()
 
 
+def _check_icon(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PluginUiRpcInvalidRequest("项目图标格式无效")
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if _ICON_NAME.fullmatch(cleaned) is None:
+        raise PluginUiRpcInvalidRequest("项目图标标识无效")
+    return cleaned
+
+
 def _project_id(payload: dict[str, object]) -> str:
     value = payload.get("project_id")
     if not isinstance(value, str) or not value:
@@ -151,6 +167,7 @@ def _project_row(project_id: str, value: dict[str, object]) -> dict[str, object]
         "id": project_id, "name": value["name"],
         "archived": value["archived"], "created_at": value["created_at"],
         "directory": value.get("directory"),
+        "icon": value.get("icon"),
     }
 
 
@@ -189,6 +206,11 @@ async def apply(ctx: Context) -> None:
         if method == "project.rename" and set(payload) == {"project_id", "name"}:
             project_id, project_name = _project_id(payload), _check_name(payload["name"])
             row = await run_file_io(lambda: projects.update(project_id, name=project_name))
+            notify_groups_changed()
+            return row
+        if method == "project.set_icon" and {"project_id"} <= set(payload) <= {"project_id", "icon"}:
+            project_id, icon = _project_id(payload), _check_icon(payload.get("icon"))
+            row = await run_file_io(lambda: projects.update(project_id, icon=icon))
             notify_groups_changed()
             return row
         if method == "project.archive" and set(payload) == {"project_id"}:

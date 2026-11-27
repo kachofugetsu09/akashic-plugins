@@ -80,17 +80,31 @@ async def test_projects_mutations_invalidate_navigation_groups_slot(tmp_path: Pa
             ("projects", "navigation.groups"),
         ]
 
+        updated = await slots.query(
+            "project.set_icon",
+            {"project_id": project_id, "icon": "terminal"},
+            session_id=None,
+            turn_id=None,
+        )
+        assert updated["icon"] == "terminal"
+        assert len(slots.invalidated) == 3
+
+        cleared = await slots.query(
+            "project.set_icon",
+            {"project_id": project_id, "icon": None},
+            session_id=None,
+            turn_id=None,
+        )
+        assert cleared["icon"] is None
+        assert len(slots.invalidated) == 4
+
         await slots.query(
             "project.archive",
             {"project_id": project_id},
             session_id=None,
             turn_id=None,
         )
-        assert slots.invalidated == [
-            ("projects", "navigation.groups"),
-            ("projects", "navigation.groups"),
-            ("projects", "navigation.groups"),
-        ]
+        assert len(slots.invalidated) == 5
     finally:
         await root.dispose()
         log.close()

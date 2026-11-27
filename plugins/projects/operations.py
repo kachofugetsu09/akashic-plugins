@@ -46,6 +46,8 @@ MIRRORS = (
     QueryMirror("project.list", ("project", "list"), "列出全部项目（含默认目录与归档状态）"),
     QueryMirror("project.rename", ("project", "rename"), "重命名项目",
                 (_ID, OptionSpec("name", "新名称", required=True))),
+    QueryMirror("project.set_icon", ("project", "set-icon"), "更换或重置项目图标（留空恢复默认文件夹）",
+                (_ID, OptionSpec("icon", "kubai-icons/line 图标标识，省略或留空恢复默认"))),
     QueryMirror("project.archive", ("project", "archive"), "归档项目；归档后不再接纳新会话", (_ID,)),
     QueryMirror("project.bind_directory", ("project", "bind-directory"), "为项目首次绑定默认目录（绑定后不可更改）",
                 (_ID, OptionSpec("path", "执行主机上的绝对目录", required=True))),

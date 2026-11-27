@@ -1,7 +1,7 @@
 import "./plugin-ui.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  render, type NavigationForm, type NavigationGroup, type NavigationGroupsProvider, type PluginUiHostContext,
+  GroupIconPicker, render, type NavigationForm, type NavigationGroup, type NavigationGroupsProvider, type PluginUiHostContext,
   type PluginUiNavigationContext, type PluginUiNavigationFormContext, type ScopeFieldValues,
 } from "@akashic/chat-ui-v1";
 
@@ -12,6 +12,7 @@ interface Project {
   name: string;
   archived: boolean;
   directory: string | null;
+  icon: string | null;
 }
 
 interface PendingProject {
@@ -35,10 +36,17 @@ const PENDING_PREFIX = "akashic.project-create.";
 function projectOf(value: unknown): Project {
   const row = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
   if (!row || typeof row.id !== "string" || !row.id || typeof row.name !== "string" || typeof row.archived !== "boolean"
-    || (row.directory !== undefined && row.directory !== null && typeof row.directory !== "string")) {
+    || (row.directory !== undefined && row.directory !== null && typeof row.directory !== "string")
+    || (row.icon !== undefined && row.icon !== null && typeof row.icon !== "string")) {
     throw new Error("项目记录无效");
   }
-  return { id: row.id, name: row.name, archived: row.archived, directory: typeof row.directory === "string" ? row.directory : null };
+  return {
+    id: row.id,
+    name: row.name,
+    archived: row.archived,
+    directory: typeof row.directory === "string" ? row.directory : null,
+    icon: typeof row.icon === "string" && row.icon ? row.icon : null,
+  };
 }
 
 function parsePending(key: string, raw: string | null): PendingProject {
@@ -286,8 +294,29 @@ function PendingProjects({ context }: { context: PluginUiNavigationContext }) {
   </div>;
 }
 
+// 更换项目图标：复用宿主提供的 kubai-icons/line 全量分类选择器。
+function ChangeIcon({ context, group }: { context: PluginUiNavigationFormContext; group: NavigationGroup }) {
+  const [icon, setIcon] = useState<string | null>(group.icon ?? null);
+  const busy = useBusy(context);
+  const latest = useRef(icon);
+  latest.current = icon;
+  useEffect(() => context.form.onSubmit(async () => {
+    projectOf(await context.query("project.set_icon", { project_id: group.id, icon: latest.current }));
+  }), [context, group.id]);
+  useEffect(() => context.form.setReady(true), [context]);
+  return <div className="projects-ui-form">
+    <GroupIconPicker value={icon} disabled={busy} onChange={setIcon} />
+  </div>;
+}
+
 const mountWith = <C,>(view: (context: C) => ReactNode) =>
   (host: HTMLElement, context: C) => render(host, view(context));
+
+const iconForm = (group: NavigationGroup): NavigationForm => ({
+  title: `更换「${group.label}」图标`,
+  submitLabel: "保存图标",
+  mount: mountWith((context: PluginUiNavigationFormContext) => <ChangeIcon context={context} group={group} />),
+});
 
 const directoryForm = (group: NavigationGroup): NavigationForm => group.detail
   ? { title: "固定目录", mount: mountWith((context: PluginUiNavigationFormContext) => <FixedDirectory context={context} group={group} />) }
@@ -300,10 +329,18 @@ const groups: NavigationGroupsProvider = {
     const result = await query("project.list");
     if (!Array.isArray(result.items)) throw new Error("项目列表无效");
     return result.items.map(projectOf).filter((project) => !project.archived)
-      .map((project) => ({ id: project.id, label: project.name, ...(project.directory ? { detail: project.directory } : {}) }));
+      .map((project) => ({
+        id: project.id,
+        label: project.name,
+        ...(project.directory ? { detail: project.directory } : {}),
+        ...(project.icon ? { icon: project.icon } : {}),
+      }));
   },
   create: { title: "创建项目", submitLabel: "创建项目", mount: mountWith((context: PluginUiNavigationFormContext) => <CreateProject context={context} />) },
-  actions: (group) => [{ label: group.detail ? "查看固定目录" : "选择目录", form: directoryForm(group) }],
+  actions: (group) => [
+    { label: "更换图标", form: iconForm(group) },
+    { label: group.detail ? "查看固定目录" : "选择目录", form: directoryForm(group) },
+  ],
   notice: { mount: mountWith((context: PluginUiNavigationContext) => <PendingProjects context={context} />) },
 };
 
