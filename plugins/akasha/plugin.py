@@ -354,10 +354,13 @@ async def run(ctx: Context, interest: Interest) -> None:
             if "scope.meta" in PLUGIN_UI_SLOTS
             else ("turn.before_reasoning", "scope.fields", "scope.badge")
         )
-        _ = await child.require(UI_SLOTS).register_plugin_ui(
-            child, PluginUiDefinition(module="message_ui.js", stylesheet="message_ui.css",
-                                    slots=ui_slots), query=query,
+        import dataclasses as _dc
+        ui_def = (
+            PluginUiDefinition(module="message_ui.js", stylesheet="message_ui.css", slots=ui_slots, client_kernel=True)
+            if any(f.name == "client_kernel" for f in _dc.fields(PluginUiDefinition))
+            else PluginUiDefinition(module="message_ui.js", stylesheet="message_ui.css", slots=ui_slots)
         )
+        _ = await child.require(UI_SLOTS).register_plugin_ui(child, ui_def, query=query)
     _ = await ctx.inject((UI_SLOTS, AKASHA_RECORDS_VIEW), register_plugin_ui, name="plugin-ui")
 
     def select_learning() -> tuple[str, LearningConfig, str]:

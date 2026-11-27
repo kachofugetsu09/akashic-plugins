@@ -1,5 +1,5 @@
 import "./message-ui.css";
-import { mountMemoryBadge, mountMemoryField, scopeMetaProvider } from "./scope-ui.tsx";
+import { mountMemoryBadge, mountMemoryField, renderAkashaHoverSection, scopeMetaProvider } from "./scope-ui.tsx";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -222,6 +222,16 @@ export function mountRecall(host, context) {
     unsubscribe?.();
     if (openPanel?.anchor === content.querySelector(".akasha-recall-badge")) closePanel();
   };
+}
+
+/** v3 微内核激活：直接向 projects 声明的自有子槽贡献记忆策略卡片（按同 owner + replacesMetaId 精确替代，零重复）。 */
+export function activate(ctx) {
+  return ctx.slots.contribute("projects.hover_card.sections", {
+    id: "akasha-memory-card",
+    order: 10,
+    replacesMetaId: "akasha-memory",
+    render: (props) => renderAkashaHoverSection(props),
+  });
 }
 
 export default {

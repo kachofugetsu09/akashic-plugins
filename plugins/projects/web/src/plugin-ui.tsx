@@ -1,8 +1,10 @@
 import "./plugin-ui.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  GroupIconPicker, render, type NavigationForm, type NavigationGroup, type NavigationGroupView, type NavigationGroupsProvider, type PluginUiHostContext,
-  type PluginUiNavigationContext, type PluginUiNavigationFormContext, type ScopeFieldValues,
+  GroupIconPicker, render,
+  type ChatPluginRuntimeContext, type ChatSlotHandle, type NavigationForm, type NavigationGroup, type NavigationGroupView,
+  type NavigationGroupsProvider, type PluginUiHostContext, type PluginUiNavigationContext, type PluginUiNavigationFormContext,
+  type ScopeFieldValues, type ScopeMetaItem, type ScopeMetaRecord,
 } from "@akashic/chat-ui-v1";
 
 type Query = PluginUiHostContext["query"];
@@ -380,29 +382,134 @@ function ProjectIconMark({ icon, color, size, trigger, iconProvider }: {
   </span>;
 }
 
-const projectGroupView: NavigationGroupView = {
-  renderLeading: ({ group, iconProvider }) => (
-    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" iconProvider={iconProvider} />
-  ),
-  renderHoverCard: ({ group, meta, hasActions, iconProvider }) => <div data-project-hover-card="true">
+interface ProjectHoverSectionProps {
+  readonly group: NavigationGroup;
+  readonly meta?: ScopeMetaItem;
+}
+
+interface KernelHoverRuntime {
+  readonly handle: ChatSlotHandle;
+  readonly Outlet: ChatPluginRuntimeContext["Outlet"];
+  readonly useSlotEntries: ChatPluginRuntimeContext["useSlotEntries"];
+}
+
+let activeHoverRuntime: KernelHoverRuntime | null = null;
+
+/**
+ * v3 微内核激活：由 projects 自己声明自有命名空间子槽 "projects.hover_card.sections"，
+ * 任何外部插件（如 akasha）可直接向该子槽贡献项目浮卡扩展块，Core 零知情、零白名单。
+ */
+export function activate(ctx: ChatPluginRuntimeContext): void {
+  const handle = ctx.slots.declare("projects.hover_card.sections");
+  const runtime: KernelHoverRuntime = {
+    handle,
+    Outlet: ctx.Outlet,
+    useSlotEntries: ctx.useSlotEntries,
+  };
+  activeHoverRuntime = runtime;
+  ctx.onDispose(() => {
+    if (activeHoverRuntime === runtime) activeHoverRuntime = null;
+  });
+}
+
+function DefaultMetaSection({ item }: { item: ScopeMetaItem }) {
+  return <div className="group-hover-card__section">
+    <div className="group-hover-card__kicker">
+      <span className={`group-hover-card__dot group-hover-card__dot--${item.tone ?? "muted"}`} aria-hidden="true" />
+      <span className="group-hover-card__policy">{item.label}</span>
+    </div>
+    {item.description ? <p className="group-hover-card__desc">{item.description}</p> : null}
+  </div>;
+}
+
+function ProjectHoverCardBody({ group, metaRecords, hasActions, iconProvider }: {
+  group: NavigationGroup;
+  metaRecords: readonly ScopeMetaRecord[];
+  hasActions: boolean;
+  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
+}) {
+  const runtime = activeHoverRuntime;
+  // 若 v3 微内核未激活（如运行在旧版宿主），安全退化到通用 meta 展示。
+  if (!runtime || !runtime.handle.isCurrent()) {
+    return <div data-project-hover-card="true">
+      <div className="group-hover-card__head">
+        <span className="group-hover-card__icon">
+          <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" iconProvider={iconProvider} />
+        </span>
+        <strong className="group-hover-card__title">{group.label}</strong>
+      </div>
+      {metaRecords.map(({ key, item }) => <DefaultMetaSection key={key} item={item} />)}
+      {group.detail ? <div className="group-hover-card__section group-hover-card__dir">
+        <code className="group-hover-card__path">{group.detail}</code>
+      </div> : null}
+      {hasActions ? <div className="group-hover-card__foot">右键或点行尾菜单查看更多操作</div> : null}
+    </div>;
+  }
+
+  return <ProjectHoverCardWithSlots
+    runtime={runtime}
+    group={group}
+    metaRecords={metaRecords}
+    hasActions={hasActions}
+    iconProvider={iconProvider}
+  />;
+}
+
+function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions, iconProvider }: {
+  runtime: KernelHoverRuntime;
+  group: NavigationGroup;
+  metaRecords: readonly ScopeMetaRecord[];
+  hasActions: boolean;
+  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
+}) {
+  const { handle, Outlet, useSlotEntries } = runtime;
+  const entries = useSlotEntries<ProjectHoverSectionProps>(handle);
+
+  return <div data-project-hover-card="true">
     <div className="group-hover-card__head">
       <span className="group-hover-card__icon">
         <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" iconProvider={iconProvider} />
       </span>
       <strong className="group-hover-card__title">{group.label}</strong>
     </div>
-    {meta.map((item, idx) => <div key={`${item.id}:${idx}`} className="group-hover-card__section">
-      <div className="group-hover-card__kicker">
-        <span className={`group-hover-card__dot group-hover-card__dot--${item.tone ?? "muted"}`} aria-hidden="true" />
-        <span className="group-hover-card__policy">{item.label}</span>
-      </div>
-      {item.description ? <p className="group-hover-card__desc">{item.description}</p> : null}
-    </div>)}
+    {/* 按 (owner, item.id) 逐项选择：同 owner 贡献了替代 section 时由受保护 Outlet 渲染，出错局部回退通用 meta。 */}
+    {metaRecords.map(({ owner, key, item }) => {
+      // 按内核确定性排序仅选首个获胜替代项，按其完整身份过滤并挂唯一通用回退，杜绝双渲染或双回退。
+      const winner = entries.find((entry) => entry.ownerId === owner && entry.replacesMetaId === item.id);
+      if (!winner) return <DefaultMetaSection key={key} item={item} />;
+      return <Outlet
+        key={key}
+        handle={handle}
+        props={{ group, meta: item }}
+        filter={(entry) => entry.ownerId === winner.ownerId && entry.ownerRevision === winner.ownerRevision && entry.id === winner.id}
+        entryFallback={() => <DefaultMetaSection item={item} />}
+      />;
+    })}
+    {/* 独立扩展块（未声明 replacesMetaId）：任意外部插件均可追加展示而不改 Core 或 projects。 */}
+    <Outlet
+      handle={handle}
+      props={{ group }}
+      filter={(entry) => !entry.replacesMetaId}
+    />
     {group.detail ? <div className="group-hover-card__section group-hover-card__dir">
       <code className="group-hover-card__path">{group.detail}</code>
     </div> : null}
     {hasActions ? <div className="group-hover-card__foot">右键或点行尾菜单查看更多操作</div> : null}
-  </div>,
+  </div>;
+}
+
+const projectGroupView: NavigationGroupView = {
+  renderLeading: ({ group, iconProvider }) => (
+    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" iconProvider={iconProvider} />
+  ),
+  renderHoverCard: ({ group, meta, metaRecords, hasActions, iconProvider }) => (
+    <ProjectHoverCardBody
+      group={group}
+      metaRecords={metaRecords ?? meta.map((item, idx) => ({ owner: "", key: `${item.id}:${idx}`, item }))}
+      hasActions={hasActions}
+      iconProvider={iconProvider}
+    />
+  ),
 };
 
 export default {
