@@ -33,6 +33,16 @@ PR 与 main 都会：检出固定版本 Core，把本仓库的 `plugins/`、`fro
 
 `index` 分支（与 `release/*` 同一套规则：无父提交、固定作者和时间，内容不变则提交不变）只有一个 `index.json`：组、说明、每包大小（`release/<名>` 树里文件字节数之和）、包间依赖、前置条件、镜像。不含版本，版本仍只看 `release/<名>`。本地验证：对已有 release 分支的裸仓库运行 `python scripts/extra_ci.py build ...` 会一并生成并报告 `index` 行。
 
+## 做一个私有源
+
+同样结构的仓库（`plugins/<目录>/` 加 `groups.toml`）可以在 Akashic 里用 `pkg source add <名称> <地址>` 登记成私有插件源，可以登记多个。插件前端已经构建好、直接提交在仓库里时（例如用子模块聚合各插件仓库），不必走本仓的合成构建，用 `scripts/publish_source.py` 发布即可：
+
+```bash
+python scripts/publish_source.py --root <私有源仓库> --bare /tmp/source.git --remote <私有源仓库地址>   # 加 --dry-run 只生成不推送
+```
+
+它按 git 跟踪的文件原样生成 `release/<插件名>` 与 `index` 分支，规则与本仓相同（无父提交、内容不变不推进），并沿用本仓的 `groups.toml` 校验。例子见 kachofugetsu09/akashic-fleet 的同步工作流。
+
 ## 本地构建与验证
 
 ```bash

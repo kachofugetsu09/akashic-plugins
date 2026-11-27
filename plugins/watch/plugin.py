@@ -13,6 +13,7 @@ from plugins.host_execution.contract import PROCESSES
 from plugins.ledger.contract import Message
 from plugins.ledger.contract import MESSAGE_CATALOG
 from plugins.models.contract import CHAT_MODELS, MODEL_CALL_STATS, MODEL_CATALOG
+from plugins.onboarding.contract import ONBOARDING
 from plugins.plugin_settings.contract import SETTINGS_FORMS
 from plugins.programmatic.contract import PROGRAMMATIC
 from plugins.tools.contract import TOOL_DISPLAY
@@ -22,7 +23,7 @@ from plugins.userinformation.contract import USER_INFORMATION
 from . import panel
 from .contract import WATCH_EVENTS
 from .runtime import Runtime, count_items, count_notes
-from .settings import Config, register_settings, watch_enabled_in
+from .settings import Config, register_settings, register_setup, watch_enabled_in
 
 POINTER = (
     "你在后台留着 {notes} 行便签（watch/notes.md），待看里有 {inbox} 条（watch/inbox.md）。那是你自己的事，不是这次对话的议程。你在后台各轮去过哪、留下了什么，系统记在 watch/trail.md，他问起你背地里做了什么就照它说。"
@@ -72,6 +73,7 @@ async def apply(ctx: Context) -> None:
     _ = await ctx.provide(WATCH_EVENTS, runtime)
     _ = await ctx.inject((SETTINGS_FORMS, PLUGIN_CONFIG, MODEL_CATALOG),
                          register_settings, name="settings")
+    _ = await ctx.inject((ONBOARDING, MODEL_CATALOG, PLUGIN_CONFIG), register_setup, name="onboarding")
     # 机制说明是普通技能，主 Agent 需要时用 load_skill 读取。
     _ = await ctx.inject((INSTALLED_ASSETS,), lambda child: child.require(INSTALLED_ASSETS).register(child, "skills", "skills"),
                          name="skills")

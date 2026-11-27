@@ -10,7 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent.plugin_composition import Context
 from plugins.models.contract import ModelChoice, ModelUse, model_options
-from plugins.plugin_settings.contract import SETTINGS_FORMS, SettingsField, SettingsForm
+from plugins.main_session.contract import MAIN_SESSION
+from plugins.onboarding.contract import Ability
+from plugins.plugin_settings.contract import SETTINGS_FORMS, Setup, SettingsField, SettingsForm, StatusReader, declare_setup
 from plugins.ui.contract import ModelSettings
 
 WAKE_MODEL = ModelUse("watch", "值班叫醒后的主 Agent")
@@ -77,22 +79,30 @@ class Config(BaseModel):
         return tuple(item.strip() for item in value if item.strip())
 
 
+_COST = "值班每 10 分钟用便宜模型看一次新事件，一天大约 100–200 万 token；没有低价或免费 token 时不建议开启。"
+
 FORM = SettingsForm(
     title="值班",
-    description="便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；主 Agent 在后台醒来后自己决定做什么、说不说话。默认关闭，后台持续轮询消耗大量 token，找不到低价或免费 token 时不建议开启。",
+    description="便宜的模型看着事件流，只在该叫的时候叫醒主 Agent；主 Agent 在后台醒来后自己决定做什么、说不说话。" + _COST,
     fields=(
-        SettingsField("watch_enabled", "开启值班", kind="toggle",
-                      hint="默认关闭。后台持续轮询日均约消耗 100 万–200 万 token，找不到低价或免费 token 时不建议开启。"),
-        SettingsField("target", "主对话", hint="主 Agent 想说话时发到的会话 ID，例如 akashic:1234abcd。留空则值班不运行。"),
-        SettingsField("interval_minutes", "值班间隔（分钟）", kind="number", hint="每隔这么久把新事件攒成一批看一次。"),
-        SettingsField("watch_models", "值班模型", kind="lines", hint="每行一个模型 ID，按顺序退避：前一个失败或输出不合格就换下一个。留空用默认模型。"),
-        SettingsField("model", "主 Agent 模型", kind="model", use=WAKE_MODEL),
-        SettingsField("daily_wakes", "每天最多叫醒几次", kind="number", hint="超出的不丢，放进待看列表；标成紧急的不受此限。"),
+        SettingsField("watch_enabled", "开启值班", kind="toggle", hint="默认关闭；打开并保存后按下面的设置开始值班。"),
+        SettingsField("watch_models", "值班模型", kind="lines",
+                      hint="定时看事件用，越便宜越好，免费或包月的最合适。每行一个模型 ID，按顺序退避。留空会用默认模型，可能很贵。"),
+        SettingsField("model", "叫醒后由谁处理", kind="model", use=WAKE_MODEL),
+        SettingsField("target", "有事发到", hint="主 Agent 想说话时发到的会话。留空时跟随侧栏顶部的 Akashic 对话；也可以写成 akashic:1234abcd 或 telegram:123。"),
+        SettingsField("interval_minutes", "值班间隔（分钟）", kind="number", hint="每隔这么久把新事件攒成一批看一次。", advanced=True),
+        SettingsField("daily_wakes", "每天最多叫醒几次", kind="number", hint="超出的不丢，放进待看列表；标成紧急的不受此限。", advanced=True),
         SettingsField("digest_hours", "待看列表多久看一次（小时）", kind="number",
-                      hint="待看列表有新条目、主 Agent 又这么久没醒过时叫它过一眼；0 表示只在被叫醒和复盘时看。"),
-        SettingsField("review_at", "每日复盘时间", hint="HH:MM；写 off 表示不复盘。"),
-        SettingsField("timezone", "时区"),
+                      hint="待看列表有新条目、主 Agent 又这么久没醒过时叫它过一眼；0 表示只在被叫醒和复盘时看。", advanced=True),
+        SettingsField("review_at", "每日复盘时间", hint="HH:MM；写 off 表示不复盘。", advanced=True),
+        SettingsField("timezone", "时区", advanced=True),
     ),
+    setup=Setup("watch", "值班", Ability(
+        pitch="替你留意要紧的事",
+        benefit="它在后台定时看一眼邮件、日程、手机通知等新事件，真有要紧的才叫醒主 Agent 来找你。",
+        default_on=False,
+        caution=_COST,
+    )),
 )
 
 
@@ -108,19 +118,37 @@ class WatchSettings(ModelSettings):
             result["values"] = values
         return result
 
+    # 保存时补两件事：老配置固化 watch_enabled；开启值班却没写主对话时，跟随侧栏顶部的 Akashic 对话。
     async def save(self, request_id: str, expected_input: str, values: dict[str, object]) -> dict[str, object]:
         patched = dict(values)
         if "watch_enabled" not in patched:
             patched["watch_enabled"] = watch_enabled_in(self.ctx.config)
+        target = patched.get("target", self.ctx.config.get("target"))
+        if patched["watch_enabled"] is True and not (isinstance(target, str) and target.strip()):
+            with self.ctx.borrow(MAIN_SESSION) as main:
+                current = None if main is None else main.current()
+            if current is None:
+                raise ValueError("还没有主对话：先在侧栏顶部固定一段 Akashic 对话，或在「有事发到」里填写会话")
+            patched["target"] = current
         return await super().save(request_id, expected_input, patched)
+
+
+# 引导里这一步算完成：值班关着（用户没打开）或已开启且有主对话。
+def _status(ctx: Context) -> StatusReader:
+    async def read() -> Mapping[str, object]:
+        enabled = watch_enabled_in(ctx.config)
+        target = ctx.config.get("target")
+        ready = enabled and isinstance(target, str) and bool(target.strip())
+        return {"enabled": enabled, "ready": ready, "reason": "" if ready or not enabled else "还没有主对话"}
+    return read
 
 
 async def register_settings(ctx: Context) -> object:
     uses = {field.name: field.use for field in FORM.fields if field.use is not None}
-    settings = WatchSettings(
-        ctx,
-        Config,
-        tuple(field.name for field in FORM.fields),
-        status=model_options(ctx, uses) if uses else None,
-    )
+    # 表单的 enabled 表示插件可编辑；watch_enabled 是表单里的一个字段，不能混进来，否则关着时整张表单不可操作。
+    settings = WatchSettings(ctx, Config, tuple(field.name for field in FORM.fields), status=model_options(ctx, uses))
     return await ctx.require(SETTINGS_FORMS).register(ctx, FORM, settings)
+
+
+async def register_setup(ctx: Context) -> None:
+    await declare_setup(ctx, Config, FORM, status=_status(ctx))
