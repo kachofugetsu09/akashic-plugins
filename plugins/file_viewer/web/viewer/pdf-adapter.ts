@@ -64,6 +64,14 @@ export class PdfAdapter {
   private renderQueue: number[] = [];
   private zoomLockUntil = 0;
   private disposed = false;
+  private pageFrame = 0;
+  private readonly onStageScroll = (): void => {
+    if (this.pageFrame) return;
+    this.pageFrame = requestAnimationFrame(() => {
+      this.pageFrame = 0;
+      this.syncCurrentPage();
+    });
+  };
 
   constructor(
     private readonly stackEl: HTMLElement,
@@ -303,8 +311,22 @@ export class PdfAdapter {
     };
   }
 
+  // 当前页：视口上方三分之一处落在哪一页（读者视线所在），缩放锁定期间不动。
+  private syncCurrentPage(): void {
+    if (this.disposed || performance.now() < this.zoomLockUntil || !this.slots.length) return;
+    const stage = this.stageEl.getBoundingClientRect();
+    const line = stage.top + stage.height / 3;
+    const slot = this.slots.find((item) => item.el.getBoundingClientRect().bottom > line) ?? this.slots[this.slots.length - 1];
+    if (slot.pageNumber === this.currentPage) return;
+    this.currentPage = slot.pageNumber;
+    this.callbacks.onPageChange(this.currentPage, this.pageCount);
+    this.evictFarPages(this.currentPage);
+  }
+
   destroy(): void {
     this.disposed = true;
+    this.stageEl.removeEventListener("scroll", this.onStageScroll);
+    if (this.pageFrame) cancelAnimationFrame(this.pageFrame);
     this.searchGen += 1;
     this.renderQueue = [];
     this.observer?.disconnect();
@@ -376,28 +398,20 @@ export class PdfAdapter {
     this.observer = new IntersectionObserver(
       (entries) => {
         if (this.disposed) return;
-        let topVisible: { page: number; ratio: number } | null = null;
+        // 观察器带预渲染边距、且只报变化的页，只用来排渲染；当前页按视口几何算。
         for (const entry of entries) {
           const pageNum = Number.parseInt((entry.target as HTMLElement).dataset.pageNumber ?? "", 10);
-          if (!Number.isInteger(pageNum)) continue;
-          if (entry.isIntersecting) {
-            this.enqueueRender(pageNum);
-            if (!topVisible || entry.intersectionRatio > topVisible.ratio) {
-              topVisible = { page: pageNum, ratio: entry.intersectionRatio };
-            }
-          }
+          if (Number.isInteger(pageNum) && entry.isIntersecting) this.enqueueRender(pageNum);
         }
-        if (performance.now() >= this.zoomLockUntil && topVisible && topVisible.page !== this.currentPage) {
-          this.currentPage = topVisible.page;
-          this.callbacks.onPageChange(this.currentPage, this.pageCount);
-          this.evictFarPages(this.currentPage);
-        }
+        this.syncCurrentPage();
       },
       { root: this.stageEl, rootMargin: "520px 0px", threshold: [0.05, 0.4, 0.75] }
     );
     for (const slot of this.slots) {
       this.observer.observe(slot.el);
     }
+    this.stageEl.removeEventListener("scroll", this.onStageScroll);
+    this.stageEl.addEventListener("scroll", this.onStageScroll, { passive: true });
   }
 
   private renderVisibleWindow(centerPage: number): void {
