@@ -469,19 +469,24 @@ const PROJECT_COLOR_TOKENS: Readonly<Record<string, string>> = {
 };
 
 // 图标经 ChatKernel 服务表自取（icon.provider），宿主不转交。
-function ProjectIconMark({ icon, color, size, trigger }: {
+function ProjectIconMark({ icon, color, size, trigger, open = false }: {
   icon?: string;
   color?: string;
   size: number;
   trigger: "hover" | "parent" | "none";
+  open?: boolean;
 }) {
   const tint = color ? PROJECT_COLOR_TOKENS[color] : undefined;
   const IconComp = useKernelIconProvider()?.Icon;
+  // 宿主行尾没有折叠箭头：默认文件夹展开时画成打开的样子；用户自选的图标不变，开合看下方缩进的会话。
+  const opened = open && (!icon || icon === "folder");
   return <span className="navigation-group__icon" data-kubai-trigger="" style={tint ? { color: tint } : undefined} aria-hidden="true">
     {IconComp
-      ? <IconComp name={icon || "folder"} size={size} trigger={trigger} />
+      ? <IconComp name={opened ? "folder-open" : icon || "folder"} size={size} trigger={trigger} />
       : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+        {opened
+          ? <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+          : <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />}
       </svg>}
   </span>;
 }
@@ -602,8 +607,8 @@ function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions }: 
 }
 
 const projectGroupView: NavigationGroupView = {
-  renderLeading: ({ group }) => (
-    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" />
+  renderLeading: ({ group, open }) => (
+    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" open={open} />
   ),
   renderHoverCard: ({ group, meta, metaRecords, hasActions }) => (
     <ProjectHoverCardBody
