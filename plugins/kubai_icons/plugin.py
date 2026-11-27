@@ -9,9 +9,10 @@ api_version = 3
 name = "kubai_icons"
 version = "1.0.0"
 desc = "Kubai 线性动画图标库（26 个官方分类、1,285 枚线性动画图标，按需分块加载）"
+inject = (UI_SLOTS,)
 
 
-async def plugin(ctx: Context) -> None:
+async def apply(ctx: Context) -> None:
     """登记纯微内核前端模块与多 chunk 资产目录。"""
 
     async def query(
