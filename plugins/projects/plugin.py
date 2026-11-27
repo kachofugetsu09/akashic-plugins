@@ -173,6 +173,11 @@ async def apply(ctx: Context) -> None:
 
     _ = await ctx.inject((WORKING_DIRECTORY,), defaults, name="directory-default")
 
+    def notify_groups_changed() -> None:
+        invalidate = getattr(ctx.require(UI_SLOTS), "invalidate_slot", None)
+        if callable(invalidate):
+            _ = invalidate(ctx, "navigation.groups")
+
     async def query(method: str, payload: dict[str, object], *, session_id: str | None,
               turn_id: str | None) -> dict[str, object]:
         if method == "project.list" and not payload:
@@ -183,10 +188,14 @@ async def apply(ctx: Context) -> None:
             return await create_from_ui(payload)
         if method == "project.rename" and set(payload) == {"project_id", "name"}:
             project_id, project_name = _project_id(payload), _check_name(payload["name"])
-            return await run_file_io(lambda: projects.update(project_id, name=project_name))
+            row = await run_file_io(lambda: projects.update(project_id, name=project_name))
+            notify_groups_changed()
+            return row
         if method == "project.archive" and set(payload) == {"project_id"}:
             project_id = _project_id(payload)
-            return await run_file_io(lambda: projects.update(project_id, archived=True))
+            row = await run_file_io(lambda: projects.update(project_id, archived=True))
+            notify_groups_changed()
+            return row
         if method in {"project.bind_directory", "project.directory", "directory.browse"}:
             with ctx.borrow(WORKING_DIRECTORY) as directories:
                 if directories is None:
@@ -202,7 +211,9 @@ async def apply(ctx: Context) -> None:
                         checked = await directories.check_directory(path)
                     except ValueError as error:
                         raise PluginUiRpcInvalidRequest(str(error)) from error
-                    return await run_file_io(lambda: projects.bind_directory(project_id, checked))
+                    row = await run_file_io(lambda: projects.bind_directory(project_id, checked))
+                    notify_groups_changed()
+                    return row
                 if method == "project.directory" and set(payload) == {"project_id"}:
                     project_id = _project_id(payload)
                     path = await run_file_io(lambda: projects.directory(project_id))
@@ -214,7 +225,7 @@ async def apply(ctx: Context) -> None:
                     return dict(await directories.browse(path, after=after))
         raise PluginUiRpcInvalidRequest(f"不支持的项目查询：{method}")
 
-    creation = ProjectCreation(ctx, projects)
+    creation = ProjectCreation(ctx, projects, on_changed=notify_groups_changed)
 
     # 界面新建与 self project create 是同一个操作：带附加设置时经操作总线，与项目记录同一事务提交。
     async def create_from_ui(payload: dict[str, object]) -> dict[str, object]:

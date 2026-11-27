@@ -64,9 +64,10 @@ def _flag_value(value: object) -> str:
 class ProjectCreation:
     """准备（名称、ID、目录检查）在事务外；项目与扩展写入一次联合提交。"""
 
-    def __init__(self, ctx: Context, projects: ProjectRecords):
+    def __init__(self, ctx: Context, projects: ProjectRecords, *, on_changed: Callable[[], None] | None = None):
         self._ctx = ctx
         self._projects = projects
+        self._on_changed = on_changed
 
     # 重放承认原提交，即使目录后来移动；首次创建才检查执行主机上的目录。
     async def _checked_directory(self, project_id: str, directory: str | None) -> str | None:
@@ -94,6 +95,8 @@ class ProjectCreation:
             results = await self._ctx.require(OWNER_STATE).transact_joint((own, *writes))
         except MessageConflict as error:
             raise PluginUiRpcInvalidRequest("项目正在并发创建，请重试") from error
+        if self._on_changed is not None:
+            self._on_changed()
         return dict(results[0]) if isinstance(results[0], Mapping) else {}
 
     # 界面附带的 scope.fields 取值翻成同一条命令，由操作总线解析、校验并收集扩展写入。
