@@ -37,7 +37,8 @@ def _git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> str:
 # 未 git add 的目录里可能有 .env 之类的秘密，宁可拒绝也不退回打包整个目录。
 def _tracked(directory: Path) -> list[str]:
     listed = _git("ls-files", "-z", cwd=directory)
-    files = [item for item in listed.split("\0") if item]
+    # .github 是插件仓库自己的 CI，产物里用不到；带上还会让推送需要 workflows 权限。
+    files = [item for item in listed.split("\0") if item and not item.startswith(".github/")]
     if not files:
         raise SystemExit(f"{directory} 里没有 git 跟踪的文件：先 git add 并提交，再发布")
     return files
