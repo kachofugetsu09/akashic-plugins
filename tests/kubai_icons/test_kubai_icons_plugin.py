@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from agent.plugin_composition import CompositionRoot, Context, PluginRuntime
-from plugins.kubai_icons.plugin import apply as apply_kubai_icons
+from plugins.kubai_icons.plugin import apply as apply_kubai_icons, inject
 from plugins.ui.contract import PLUGIN_UI, UI_SLOTS
 from plugins.ui.plugin_ui import PluginUiSlots
 from plugins.ui.queries import LivePluginUiProvider
@@ -19,7 +19,7 @@ async def test_kubai_icons_registers_icon_provider_and_chunks(tmp_path: Path) ->
     plugin_dir = tmp_path / "kubai_icons"
     chunks_dir = plugin_dir / "static" / "chunks"
     chunks_dir.mkdir(parents=True)
-    (plugin_dir / "plugin_ui.js").write_text("export default { slots: {} };\n", encoding="utf-8")
+    (plugin_dir / "plugin_ui.js").write_text("export function activate(ctx) {}\n", encoding="utf-8")
     (plugin_dir / "plugin_ui.css").write_text(".kubai-icons-root {}\n", encoding="utf-8")
     (chunks_dir / "cat-files-abc123.js").write_text("export const icons = {};\n", encoding="utf-8")
 
@@ -35,20 +35,23 @@ async def test_kubai_icons_registers_icon_provider_and_chunks(tmp_path: Path) ->
         await root.mount(
             apply_kubai_icons,
             name="kubai_icons",
-            inject=(UI_SLOTS,),
+            inject=inject,
             runtime=PluginRuntime("kubai_icons", "release", plugin_dir, tmp_path, tmp_path, {}),
         )
-        # v1 catalog 隐藏纯 v2 图标扩展，避免旧浏览器拒绝整份目录。
+        # v1 catalog 隐藏纯微内核插件，避免旧浏览器拒绝整份目录。
         v1 = await provider.catalog(protocol=1)
         assert v1["items"] == []
 
-        # v2 catalog 暴露 icon.provider 与路径式分块资产。
+        # 纯微内核插件只对 v3 客户端可见。
         v2 = await provider.catalog(protocol=2)
-        items = cast(list[dict[str, object]], v2["items"])
+        assert v2["items"] == []
+        v3 = await provider.catalog(protocol=3)
+        items = cast(list[dict[str, object]], v3["items"])
         assert len(items) == 1
         item = items[0]
         assert item["id"] == "kubai_icons"
-        assert item["slots"] == ["icon.provider"]
+        assert item["slots"] == []
+        assert item["client_kernel"] is True
         assert item["module_path"] == "plugin_ui.js"
         assert item["stylesheet_path"] == "plugin_ui.css"
 

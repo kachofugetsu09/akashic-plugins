@@ -21,7 +21,6 @@ from core.common.diagnostic_log import log_event
 from plugins.akasha.contract import EMBEDDING_MEMORY_PLUGIN
 from plugins.models.contract import EMBEDDINGS
 from plugins.ui.contract import (
-    PLUGIN_UI_SLOTS,
     UI_SLOTS,
     Configuration,
     hidden_part,
@@ -349,18 +348,16 @@ async def run(ctx: Context, interest: Interest) -> None:
 
     async def register_plugin_ui(child: Context) -> None:
         # UI provider 在事件循环持有调用作用域，线程回调不能再次进入 entrypoint。
-        ui_slots = (
-            ("turn.before_reasoning", "scope.fields", "scope.badge", "scope.meta")
-            if "scope.meta" in PLUGIN_UI_SLOTS
-            else ("turn.before_reasoning", "scope.fields", "scope.badge")
+        _ = await child.require(UI_SLOTS).register_plugin_ui(
+            child,
+            PluginUiDefinition(
+                module="message_ui.js",
+                stylesheet="message_ui.css",
+                slots=("turn.before_reasoning", "scope.fields", "scope.badge", "scope.meta"),
+                client_kernel=True,
+            ),
+            query=query,
         )
-        import dataclasses as _dc
-        ui_def = (
-            PluginUiDefinition(module="message_ui.js", stylesheet="message_ui.css", slots=ui_slots, client_kernel=True)
-            if any(f.name == "client_kernel" for f in _dc.fields(PluginUiDefinition))
-            else PluginUiDefinition(module="message_ui.js", stylesheet="message_ui.css", slots=ui_slots)
-        )
-        _ = await child.require(UI_SLOTS).register_plugin_ui(child, ui_def, query=query)
     _ = await ctx.inject((UI_SLOTS, AKASHA_RECORDS_VIEW), register_plugin_ui, name="plugin-ui")
 
     def select_learning() -> tuple[str, LearningConfig, str]:
