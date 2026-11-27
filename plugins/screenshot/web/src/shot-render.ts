@@ -79,7 +79,7 @@ function markPii(root: HTMLElement, cover: (kind: PiiKind) => boolean): Partial<
       if (!cover(hit.kind)) continue;
       parts.push(text.slice(at, hit.start));
       const block = document.createElement("span");
-      block.className = "privacy-shot-pii";
+      block.className = "shot-pii";
       block.style.cssText = "background: var(--ak-ink-primary); color: transparent; border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone;";
       block.textContent = text.slice(hit.start, hit.end);
       parts.push(block);
@@ -92,7 +92,7 @@ function markPii(root: HTMLElement, cover: (kind: PiiKind) => boolean): Partial<
 
 function footerElement(): HTMLElement {
   const footer = document.createElement("div");
-  footer.className = "privacy-shot-footer";
+  footer.className = "shot-footer";
   const day = new Date();
   const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   footer.innerHTML = `<span>${date}</span><b>Akashic</b>`;
@@ -129,9 +129,9 @@ function planSegments(root: HTMLElement, rows: HTMLElement[], maxHeight: number)
 
 // 3. 逐段只显示本段消息拍照；单条仍超上限时降倍率
 async function captureSegments(root: HTMLElement, rows: HTMLElement[], segments: HTMLElement[][], scale: number, alive: () => boolean): Promise<ShotImage[] | null> {
-  const footer = root.querySelector<HTMLElement>(".privacy-shot-footer");
+  const footer = root.querySelector<HTMLElement>(".shot-footer");
   const label = document.createElement("div");
-  label.className = "privacy-shot-continued";
+  label.className = "shot-continued";
   const images: ShotImage[] = [];
   for (const [index, segment] of segments.entries()) {
     for (const row of rows) row.style.display = segment.includes(row) ? "" : "none";
@@ -160,6 +160,14 @@ async function captureSegments(root: HTMLElement, rows: HTMLElement[], segments:
   return images;
 }
 
+// 克隆来自页面：把宿主的隐私标记改写成本插件自己的属性，屏幕上开着的打码就不会作用到截图里，截图只按自己选的档位打码。
+function claimPrivateMarks(root: HTMLElement): void {
+  for (const element of root.querySelectorAll<HTMLElement>("[data-akashic-private]")) {
+    element.dataset.shotPrivate = element.dataset.akashicPrivate;
+    delete element.dataset.akashicPrivate;
+  }
+}
+
 export async function renderShot(selection: MessageSelection, options: ShotOptions, alive: () => boolean): Promise<ShotResult | null> {
   const width = options.wide ? 720 : 390;
   const scale = options.wide ? 2 : 3;
@@ -167,8 +175,9 @@ export async function renderShot(selection: MessageSelection, options: ShotOptio
   try {
     const root = stage.element;
     const rows = [...root.children] as HTMLElement[];
-    root.classList.add("privacy-shot");
+    root.classList.add("shot");
     root.dataset.mask = options.mask;
+    claimPrivateMarks(root);
     const found = markPii(root, (kind) => options.mask === "pii" && !options.unmasked[kind]);
     if (options.footer) root.append(footerElement());
     await imagesSettled(root);

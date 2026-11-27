@@ -7,8 +7,8 @@
 
 [groups.chat]
 title = "对话体验"
-description = "自动命名会话、侧栏主对话入口、项目分组、线性图标扩展、隐私打码"
-members = ["session_title", "main_session", "projects", "kubai_icons", "privacy_mask"]
+description = "自动命名会话、侧栏主对话入口、项目分组、线性图标扩展、隐私打码、对话截图"
+members = ["session_title", "main_session", "projects", "kubai_icons", "privacy_mask", "screenshot"]
 
 [groups.workbench]
 title = "工作台"
