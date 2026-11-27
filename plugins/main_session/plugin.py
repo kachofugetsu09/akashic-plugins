@@ -6,6 +6,7 @@ from typing import Literal
 
 from agent.plugin_composition import Context
 from core.common.file_io import run_file_io
+from plugins.main_session.contract import MAIN_SESSION
 from plugins.ledger.contract import (
     MESSAGE_CATALOG,
     OWNER_STATE,
@@ -190,8 +191,18 @@ _MIRRORS = (
 )
 
 
+class _Current:
+    def __init__(self, pointer: Pointer) -> None:
+        self._pointer = pointer
+
+    def current(self) -> str | None:
+        state, session_id = self._pointer.read()
+        return session_id if state == "set" else None
+
+
 async def apply(ctx: Context) -> None:
     pointer = Pointer(ctx.require(OWNER_STATE).open(ctx), ctx.require(MESSAGE_CATALOG))
+    await ctx.provide(MAIN_SESSION, _Current(pointer))
 
     def query(method: str, payload: dict[str, object], *, session_id: str | None, turn_id: str | None) -> dict[str, object]:
         return _query(pointer, method, payload)
