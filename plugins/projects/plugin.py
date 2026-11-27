@@ -32,6 +32,7 @@ _PREFIX = "project:"
 _NAME_LIMIT = 80
 _PROJECT_ID = re.compile(r"p_[0-9a-f]{32}")
 _ICON_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_ICON_COLORS = frozenset({"pine", "blue", "ochre", "plum", "teal", "cinnabar"})
 
 
 class Projects:
@@ -84,8 +85,8 @@ class Projects:
         return self._store.read(_PREFIX + project_id) is not None
 
     def update(self, project_id: str, **changes: object) -> dict[str, object]:
-        if set(changes) - {"name", "archived", "icon"}:
-            raise PluginUiRpcInvalidRequest("项目更新只允许改名、更换图标或归档")
+        if set(changes) - {"name", "archived", "icon", "color"}:
+            raise PluginUiRpcInvalidRequest("项目更新只允许改名、更换图标颜色或归档")
         key = _PREFIX + project_id
         def save(transaction: OwnerTransaction) -> dict[str, object]:
             current = transaction.read(key)
@@ -94,6 +95,8 @@ class Projects:
             value = {**dict(current.value), **changes}
             if "icon" in changes and changes["icon"] is None:
                 value.pop("icon", None)
+            if "color" in changes and changes["color"] is None:
+                value.pop("color", None)
             _ = transaction.save(key, value, expected_version=current.version)
             return _project_row(project_id, value)
         try:
@@ -155,6 +158,19 @@ def _check_icon(value: object) -> str | None:
     return cleaned
 
 
+def _check_color(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PluginUiRpcInvalidRequest("项目图标颜色格式无效")
+    cleaned = value.strip()
+    if not cleaned or cleaned == "ink":
+        return None
+    if cleaned not in _ICON_COLORS:
+        raise PluginUiRpcInvalidRequest("项目图标颜色不在允许色板内")
+    return cleaned
+
+
 def _project_id(payload: dict[str, object]) -> str:
     value = payload.get("project_id")
     if not isinstance(value, str) or not value:
@@ -168,6 +184,7 @@ def _project_row(project_id: str, value: dict[str, object]) -> dict[str, object]
         "archived": value["archived"], "created_at": value["created_at"],
         "directory": value.get("directory"),
         "icon": value.get("icon"),
+        "color": value.get("color"),
     }
 
 
@@ -208,9 +225,14 @@ async def apply(ctx: Context) -> None:
             row = await run_file_io(lambda: projects.update(project_id, name=project_name))
             notify_groups_changed()
             return row
-        if method == "project.set_icon" and {"project_id"} <= set(payload) <= {"project_id", "icon"}:
-            project_id, icon = _project_id(payload), _check_icon(payload.get("icon"))
-            row = await run_file_io(lambda: projects.update(project_id, icon=icon))
+        if method == "project.set_icon" and {"project_id"} <= set(payload) <= {"project_id", "icon", "color"}:
+            project_id = _project_id(payload)
+            updates: dict[str, object] = {}
+            if "icon" in payload or "color" not in payload:
+                updates["icon"] = _check_icon(payload.get("icon"))
+            if "color" in payload:
+                updates["color"] = _check_color(payload.get("color"))
+            row = await run_file_io(lambda: projects.update(project_id, **updates))
             notify_groups_changed()
             return row
         if method == "project.archive" and set(payload) == {"project_id"}:
