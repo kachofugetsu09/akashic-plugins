@@ -1,0 +1,9 @@
+{
+  "name": "@akashic-plugins/kubai-icons",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "kubai-icons": "^0.16.0",
+    "kubai-icons-react": "^0.16.0"
+  }
+}

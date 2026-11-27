@@ -347,8 +347,8 @@ const groups: NavigationGroupsProvider = {
   },
   create: { title: "创建项目", submitLabel: "创建项目", mount: mountWith((context: PluginUiNavigationFormContext) => <CreateProject context={context} />) },
   actions: (group) => [
-    { label: "更换图标", form: iconForm(group) },
-    { label: group.detail ? "查看固定目录" : "选择目录", form: directoryForm(group) },
+    { label: "更换图标", icon: "sparkles", form: iconForm(group) },
+    { label: group.detail ? "查看固定目录" : "选择目录", icon: "folder", form: directoryForm(group) },
   ],
   notice: { mount: mountWith((context: PluginUiNavigationContext) => <PendingProjects context={context} />) },
 };
