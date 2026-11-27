@@ -13,6 +13,7 @@ interface Project {
   archived: boolean;
   directory: string | null;
   icon: string | null;
+  color: string | null;
 }
 
 interface PendingProject {
@@ -37,7 +38,8 @@ function projectOf(value: unknown): Project {
   const row = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
   if (!row || typeof row.id !== "string" || !row.id || typeof row.name !== "string" || typeof row.archived !== "boolean"
     || (row.directory !== undefined && row.directory !== null && typeof row.directory !== "string")
-    || (row.icon !== undefined && row.icon !== null && typeof row.icon !== "string")) {
+    || (row.icon !== undefined && row.icon !== null && typeof row.icon !== "string")
+    || (row.color !== undefined && row.color !== null && typeof row.color !== "string")) {
     throw new Error("项目记录无效");
   }
   return {
@@ -46,6 +48,7 @@ function projectOf(value: unknown): Project {
     archived: row.archived,
     directory: typeof row.directory === "string" ? row.directory : null,
     icon: typeof row.icon === "string" && row.icon ? row.icon : null,
+    color: typeof row.color === "string" && row.color ? row.color : null,
   };
 }
 
@@ -294,18 +297,23 @@ function PendingProjects({ context }: { context: PluginUiNavigationContext }) {
   </div>;
 }
 
-// 更换项目图标：复用宿主提供的 kubai-icons/line 全量分类选择器。
+// 更换项目图标：复用宿主提供的 kubai-icons/line 全量分类选择器与纸面语义色板。
 function ChangeIcon({ context, group }: { context: PluginUiNavigationFormContext; group: NavigationGroup }) {
   const [icon, setIcon] = useState<string | null>(group.icon ?? null);
+  const [color, setColor] = useState<string | null>(group.color ?? null);
   const busy = useBusy(context);
-  const latest = useRef(icon);
-  latest.current = icon;
+  const latest = useRef({ icon, color });
+  latest.current = { icon, color };
   useEffect(() => context.form.onSubmit(async () => {
-    projectOf(await context.query("project.set_icon", { project_id: group.id, icon: latest.current }));
+    projectOf(await context.query("project.set_icon", {
+      project_id: group.id,
+      icon: latest.current.icon,
+      color: latest.current.color,
+    }));
   }), [context, group.id]);
   useEffect(() => context.form.setReady(true), [context]);
   return <div className="projects-ui-form">
-    <GroupIconPicker value={icon} disabled={busy} onChange={setIcon} />
+    <GroupIconPicker value={icon} color={color} disabled={busy} onChange={setIcon} onColorChange={setColor} />
   </div>;
 }
 
@@ -334,6 +342,7 @@ const groups: NavigationGroupsProvider = {
         label: project.name,
         ...(project.directory ? { detail: project.directory } : {}),
         ...(project.icon ? { icon: project.icon } : {}),
+        ...(project.color ? { color: project.color } : {}),
       }));
   },
   create: { title: "创建项目", submitLabel: "创建项目", mount: mountWith((context: PluginUiNavigationFormContext) => <CreateProject context={context} />) },
