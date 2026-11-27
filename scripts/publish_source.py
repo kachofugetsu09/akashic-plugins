@@ -58,9 +58,12 @@ def build(root: Path, bare: Path, remote: str | None) -> list[dict[str, str]]:
     # 1. 远端已有的分支是比较基准：tree 没变的插件不推进。
     _ = _git("init", "-q", "--bare", str(bare), cwd=root)
     if remote:
-        _ = _git("fetch", "-q", "--no-tags", "--depth=1", remote, "+refs/heads/release/*:refs/heads/release/*", cwd=bare)
-        _ = subprocess.run(["git", "fetch", "-q", "--no-tags", "--depth=1", remote, "+refs/heads/index:refs/heads/index"],
-                           cwd=bare, capture_output=True)
+        # 第一次发布时远端还没有这些分支：只取存在的，避免空匹配让 fetch 失败。
+        existing = _git("ls-remote", "--heads", remote, cwd=bare).splitlines()
+        wanted = [f"+{ref}:{ref}" for ref in (line.split("\t", 1)[1] for line in existing if "\t" in line)
+                  if ref.startswith("refs/heads/release/") or ref == "refs/heads/index"]
+        if wanted:
+            _ = _git("fetch", "-q", "--no-tags", "--depth=1", remote, *wanted, cwd=bare)
     before = release_heads(bare)
     old_index = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/index"], cwd=bare,
                                stdout=subprocess.PIPE, text=True).stdout.strip()
