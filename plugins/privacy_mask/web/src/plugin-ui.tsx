@@ -155,6 +155,8 @@ const definition: PluginUiDefinition = {
       },
     },
     "header.end": {
+      // 排在工作目录等标记之后。
+      order: 2,
       mount(host) {
         const engine = acquirePrivacyMaskEngine();
         const unmount = render(host, <PrivacyMaskControl engine={engine} />);

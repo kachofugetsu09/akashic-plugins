@@ -309,6 +309,7 @@ def verify(
             *frontend_typecheck_cmds,
             ["npm", "run", "check:css-tokens"],
             ["npm", "run", "check:motion"],
+            ["npm", "run", "check:frontend-boundary"],
         ], synth))
 
     def run_task(item: tuple[str, list[list[str]], Path]) -> tuple[str, int, float, str]:

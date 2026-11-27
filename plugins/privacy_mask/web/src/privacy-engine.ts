@@ -20,33 +20,19 @@ const DEFAULT_STATE: PrivacyMaskState = {
   blurContent: true,
 };
 
-const TITLE_REDACT_TARGETS = [
-  ".conversation-session",
-  ".conversation-session__title",
-  ".navigation-group__open",
-  ".navigation-group__name",
-  ".group-session:not(.group-session--more)",
-  ".group-session__title",
-  ".conversation-heading h1",
-  ".conversation-heading__title-text",
-  ".header-meta__project",
-  ".header-meta-panel__scope b",
-  ".composer-reference__title",
-  "[data-privacy-redact]",
+// 只认宿主与插件打的 data-akashic-private 标记（@akashic/chat-ui-v1 的 ChatDomAttribute）。
+const TITLE_REDACT_TARGETS = '[data-akashic-private="title"]';
+
+// 带标记子树里的悬停提示（title / data-tip）同样是隐私。
+const CONTENT_BLUR_TARGETS = [
+  "[data-akashic-private][title]",
+  "[data-akashic-private][data-tip]",
+  "[data-akashic-private] [title]",
+  "[data-akashic-private] [data-tip]",
 ].join(", ");
 
-const CONTENT_BLUR_TARGETS = [
-  ".conversation-content [title]",
-  ".conversation-content [data-tip]",
-  ".header-meta__path [title]",
-  ".header-meta__path [data-tip]",
-  ".header-meta-panel [title]",
-  ".header-meta-panel [data-tip]",
-  ".composer-tray [title]",
-  ".composer-tray [data-tip]",
-  ".composer-reply [title]",
-  ".composer-reply [data-tip]",
-].join(", ");
+// 骨架条宽度按文档顺序错落，看起来像长短不一的真实名称。
+const BAR_WIDTHS = ["62%", "48%", "74%", "56%"];
 
 function loadState(): PrivacyMaskState {
   try {
@@ -102,6 +88,7 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
   const listeners = new Set<() => void>();
   // 记录所有被剥离了 title / data-tip 的节点（即使节点随后移出 document 仍可精确无损恢复）。
   const trackedTooltips = new Map<HTMLElement, SavedTooltip>();
+  const barred = new Set<HTMLElement>();
   let scanFrame = 0;
   let applyingAttributes = false;
 
@@ -127,10 +114,28 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
     trackedTooltips.clear();
   };
 
+  // 名称打码开着时给每个名称写骨架条宽度；关掉或节点离开范围时撤回。
+  const syncBars = () => {
+    const next = new Set<HTMLElement>();
+    if (state.enabled && state.redactTitles) {
+      let index = 0;
+      for (const el of document.querySelectorAll<HTMLElement>(TITLE_REDACT_TARGETS)) {
+        if (el.closest("[data-privacy-ui]")) continue;
+        el.style.setProperty("--privacy-bar-width", BAR_WIDTHS[index % BAR_WIDTHS.length]);
+        index += 1;
+        next.add(el);
+      }
+    }
+    for (const el of barred) if (!next.has(el)) el.style.removeProperty("--privacy-bar-width");
+    barred.clear();
+    for (const el of next) barred.add(el);
+  };
+
   const syncTooltips = () => {
     scanFrame = 0;
     applyingAttributes = true;
     try {
+      syncBars();
       if (!state.enabled) {
         restoreAllTooltips();
         return;
@@ -288,6 +293,8 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("storage", onStorage);
       restoreAllTooltips();
+      for (const el of barred) el.style.removeProperty("--privacy-bar-width");
+      barred.clear();
       const root = document.documentElement;
       root.removeAttribute("data-privacy-mask");
       root.removeAttribute("data-privacy-titles");

@@ -360,7 +360,7 @@ function ProjectIconPicker({ value, onChange, color = null, onColorChange, disab
   return <div className="projects-icon-picker">
     <div className="projects-icon-picker__summary">
       <span className="projects-icon-picker__preview" data-kubai-trigger="">
-        <ProjectIconMark icon={value ?? undefined} color={color ?? undefined} size={22} trigger="parent" iconProvider={iconProvider} />
+        <ProjectIconMark icon={value ?? undefined} color={color ?? undefined} size={22} trigger="parent" />
       </span>
       <span className="projects-icon-picker__meta">
         <strong>{value || "folder"}</strong>
@@ -468,15 +468,15 @@ const PROJECT_COLOR_TOKENS: Readonly<Record<string, string>> = {
   cinnabar: "var(--ak-chart-5)",
 };
 
-function ProjectIconMark({ icon, color, size, trigger, iconProvider }: {
+// 图标经 ChatKernel 服务表自取（icon.provider），宿主不转交。
+function ProjectIconMark({ icon, color, size, trigger }: {
   icon?: string;
   color?: string;
   size: number;
   trigger: "hover" | "parent" | "none";
-  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
 }) {
   const tint = color ? PROJECT_COLOR_TOKENS[color] : undefined;
-  const IconComp = iconProvider?.Icon;
+  const IconComp = useKernelIconProvider()?.Icon;
   return <span className="navigation-group__icon" data-kubai-trigger="" style={tint ? { color: tint } : undefined} aria-hidden="true">
     {IconComp
       ? <IconComp name={icon || "folder"} size={size} trigger={trigger} />
@@ -528,11 +528,10 @@ function DefaultMetaSection({ item }: { item: ScopeMetaItem }) {
   </div>;
 }
 
-function ProjectHoverCardBody({ group, metaRecords, hasActions, iconProvider }: {
+function ProjectHoverCardBody({ group, metaRecords, hasActions }: {
   group: NavigationGroup;
   metaRecords: readonly ScopeMetaRecord[];
   hasActions: boolean;
-  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
 }) {
   const runtime = activeHoverRuntime;
   // 若 v3 微内核未激活（如运行在旧版宿主），安全退化到通用 meta 展示。
@@ -540,7 +539,7 @@ function ProjectHoverCardBody({ group, metaRecords, hasActions, iconProvider }: 
     return <div data-project-hover-card="true">
       <div className="group-hover-card__head">
         <span className="group-hover-card__icon">
-          <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" iconProvider={iconProvider} />
+          <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" />
         </span>
         <strong className="group-hover-card__title">{group.label}</strong>
       </div>
@@ -557,16 +556,14 @@ function ProjectHoverCardBody({ group, metaRecords, hasActions, iconProvider }: 
     group={group}
     metaRecords={metaRecords}
     hasActions={hasActions}
-    iconProvider={iconProvider}
   />;
 }
 
-function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions, iconProvider }: {
+function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions }: {
   runtime: KernelHoverRuntime;
   group: NavigationGroup;
   metaRecords: readonly ScopeMetaRecord[];
   hasActions: boolean;
-  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
 }) {
   const { handle, Outlet, useSlotEntries } = runtime;
   const entries = useSlotEntries<ProjectHoverSectionProps>(handle);
@@ -574,7 +571,7 @@ function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions, ic
   return <div data-project-hover-card="true">
     <div className="group-hover-card__head">
       <span className="group-hover-card__icon">
-        <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" iconProvider={iconProvider} />
+        <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" />
       </span>
       <strong className="group-hover-card__title">{group.label}</strong>
     </div>
@@ -605,15 +602,14 @@ function ProjectHoverCardWithSlots({ runtime, group, metaRecords, hasActions, ic
 }
 
 const projectGroupView: NavigationGroupView = {
-  renderLeading: ({ group, iconProvider }) => (
-    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" iconProvider={iconProvider} />
+  renderLeading: ({ group }) => (
+    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" />
   ),
-  renderHoverCard: ({ group, meta, metaRecords, hasActions, iconProvider }) => (
+  renderHoverCard: ({ group, meta, metaRecords, hasActions }) => (
     <ProjectHoverCardBody
       group={group}
       metaRecords={metaRecords ?? meta.map((item, idx) => ({ owner: "", key: `${item.id}:${idx}`, item }))}
       hasActions={hasActions}
-      iconProvider={iconProvider}
     />
   ),
 };
