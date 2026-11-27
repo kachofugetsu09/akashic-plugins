@@ -1,5 +1,5 @@
 import "./message-ui.css";
-import { mountMemoryBadge, mountMemoryField } from "./scope-ui.tsx";
+import { mountMemoryBadge, mountMemoryField, scopeMetaProvider } from "./scope-ui.tsx";
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -229,5 +229,8 @@ export default {
     "turn.before_reasoning": { mount: mountRecall },
     "scope.fields": { mount: mountMemoryField },
     "scope.badge": { mount: mountMemoryBadge },
+  },
+  providers: {
+    "scope.meta": scopeMetaProvider,
   },
 };

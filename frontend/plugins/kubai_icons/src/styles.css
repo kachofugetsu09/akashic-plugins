@@ -1,0 +1,142 @@
+/* Kubai 线性图标选择器样式：严格限定在 .kubai-icons-root 下，仅读取宿主 --ak-* token，不污染宿主全局样式。 */
+.kubai-icons-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kubai-icons-root__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--ak-radius-sm);
+  border: 1px solid var(--ak-rule-default);
+  background: var(--ak-paper-editing);
+  color: var(--ak-ink-muted);
+}
+
+.kubai-icons-root__search:focus-within {
+  border-color: var(--ak-rule-focus);
+}
+
+.kubai-icons-root__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ak-ink-primary);
+  font-size: 0.8125rem;
+}
+
+.kubai-icons-root__clear {
+  border: 0;
+  background: transparent;
+  color: var(--ak-ink-muted);
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--ak-radius-xs);
+  cursor: pointer;
+}
+
+.kubai-icons-root__clear:hover {
+  color: var(--ak-ink-primary);
+}
+
+.kubai-icons-root__cats {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.kubai-icons-root__cat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  border: 1px solid var(--ak-rule-subtle);
+  border-radius: var(--ak-radius-full);
+  background: var(--ak-paper-quiet);
+  color: var(--ak-ink-secondary) !important;
+  font-size: 0.725rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard),
+    color var(--ak-sys-duration-short) var(--ak-sys-motion-standard),
+    border-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
+}
+
+.kubai-icons-root__cat-count {
+  font-size: 0.65rem;
+  color: var(--ak-ink-muted);
+}
+
+.kubai-icons-root__cat:hover {
+  color: var(--ak-ink-primary) !important;
+  background: var(--ak-paper-sheet);
+}
+
+.kubai-icons-root__cat[aria-selected="true"] {
+  background: var(--ak-ink-primary);
+  color: var(--ak-paper-canvas) !important;
+  border-color: var(--ak-ink-primary);
+}
+
+.kubai-icons-root__cat[aria-selected="true"] .kubai-icons-root__cat-count {
+  color: var(--ak-paper-canvas);
+  opacity: 0.75;
+}
+
+.kubai-icons-root__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  max-height: 248px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.kubai-icons-root__cell {
+  height: 40px;
+  border-radius: var(--ak-radius-sm);
+  border: 1px solid transparent;
+  background: var(--ak-paper-quiet);
+  color: inherit;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard),
+    border-color var(--ak-sys-duration-short) var(--ak-sys-motion-standard);
+}
+
+.kubai-icons-root__cell:hover {
+  background: var(--ak-paper-sheet);
+}
+
+.kubai-icons-root__cell[aria-checked="true"] {
+  background: var(--ak-paper-sheet);
+  border-color: var(--ak-rule-focus);
+}
+
+.kubai-icons-root__empty {
+  grid-column: 1 / -1;
+  margin: 24px 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--ak-ink-muted);
+}

@@ -232,6 +232,18 @@ jobs:
           wait "$npm_pid"
           wait "$tsgo_pid"
 
+      - name: Cache kubai_icons plugin dependencies
+        id: kubai-cache
+        uses: actions/cache@v4
+        with:
+          path: synth/frontend/plugins/kubai_icons/node_modules
+          key: kubai-icons-${{ runner.os }}-node22-${{ hashFiles('extra/frontend/plugins/kubai_icons/package-lock.json') }}
+
+      - name: Install kubai_icons plugin dependencies (on cache miss)
+        if: steps.kubai-cache.outputs.cache-hit != 'true'
+        working-directory: synth/frontend/plugins/kubai_icons
+        run: npm ci --ignore-scripts --omit=peer --prefer-offline --no-audit --no-fund
+
       - name: Verify frontend and build release branches
         run: |
           export PATH="$RUNNER_TEMP/tsgo/node_modules/.bin:$PATH"

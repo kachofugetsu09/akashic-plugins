@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChoiceMenu, render, type PluginUiContext, type ScopeFieldControls } from "@akashic/chat-ui-v1";
+import {
+  ChoiceMenu, render, type PluginUiContext, type ScopeFieldControls, type ScopeMetaItem, type ScopeMetaProvider,
+} from "@akashic/chat-ui-v1";
 
 // 记忆范围与 Akasha 的 (learn, recall) 一一对应；“不使用记忆”即不学习也不召回。
 type Memory = "global" | "isolated" | "off" | "none";
@@ -130,3 +132,49 @@ export function mountMemoryBadge(host: HTMLElement, context: PluginUiContext<"sc
   load();
   return () => { active = false; };
 }
+
+const META_TONES: Record<Memory, ScopeMetaItem["tone"]> = {
+  global: "success",
+  isolated: "primary",
+  off: "warning",
+  none: "muted",
+};
+
+function memoryToMeta(memory: Memory): readonly ScopeMetaItem[] {
+  const choice = CHOICES.find((item) => item.value === memory);
+  if (!choice) return [];
+  return [{
+    id: "akasha-memory",
+    label: choice.label,
+    description: choice.description,
+    tone: META_TONES[memory],
+    inline: memory !== "global",
+  }];
+}
+
+/** 结构化 scope.meta 数据源：直接向宿主返回记忆策略，取代旧的 DOM 徽标解析。 */
+export const scopeMetaProvider: ScopeMetaProvider = {
+  peek(scope) {
+    const key = `${scope.dimension}:${scope.value}`;
+    const stored = storedPolicies()[key];
+    return stored && CHOICES.some((choice) => choice.value === stored) ? memoryToMeta(stored) : undefined;
+  },
+  async load(scopes, { query }) {
+    if (!scopes.length) return {};
+    const result = await query("scope.policy.list", { scopes: scopes.map((scope) => ({ dimension: scope.dimension, value: scope.value })) });
+    const rows = Array.isArray(result.policies) ? result.policies as unknown[] : [];
+    const output: Record<string, readonly ScopeMetaItem[]> = {};
+    scopes.forEach((scope, index) => {
+      const key = `${scope.dimension}:${scope.value}`;
+      const row = rows[index];
+      try {
+        const memory = memoryOf(row && typeof row === "object" ? row as Record<string, unknown> : {});
+        rememberPolicy(key, memory);
+        output[key] = memoryToMeta(memory);
+      } catch {
+        output[key] = [{ id: "akasha-memory", label: "当前策略未能读取", tone: "muted" }];
+      }
+    });
+    return output;
+  },
+};
