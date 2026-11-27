@@ -2149,6 +2149,7 @@ function FileManagerApp({
 
                       <article
                         ref={articleRef}
+                        data-akashic-private="content"
                         className={`md-article${docResult?.status === "binary" && detectDocumentFormat(path) ? " is-rich-doc" : ""}`}
                         tabIndex={0}
                         aria-label="文件内容预览"
