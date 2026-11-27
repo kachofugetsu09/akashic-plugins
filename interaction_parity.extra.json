@@ -10,7 +10,6 @@
     "http:design:GET /api/dashboard/design/fonts": {"kind": "view_only", "reason": "画布编辑器回退字体的 Google Fonts 代取字节，只供浏览器渲染；不是用户动作", "decision": ""},
     "http:design:WEBSOCKET /api/dashboard/design/live": {"kind": "transport", "reason": "向开着的画布推送新修订与 Agent 正在编辑的文档，只出不进的通知通道", "decision": ""},
     "http:file_viewer:GET /api/dashboard/file_viewer/raw": {"kind": "view_only", "reason": "给浏览器渲染 PDF/Office/图片与下载用的原始字节流；可读的文本内容由 file_viewer.read 镜像", "decision": ""},
-    "http:file_viewer:WEBSOCKET /api/dashboard/file_viewer/live": {"kind": "transport", "reason": "向开着的文件标签推送 Agent 打开的文件与定位锚点，只出不进的通知通道", "decision": ""},
     "http:phone_assist:GET /api/phone-assist/health": {"kind": "transport", "reason": "手机浮层连通性健康探针", "decision": ""},
     "http:phone_assist:GET /api/phone-assist/sheet": {"kind": "view_only", "reason": "半屏浮层 WebView 的静态 HTML 页面", "decision": ""},
     "http:phone_assist:GET /api/phone-assist/stream/{session_id}": {"kind": "transport", "reason": "半屏浮层的会话消息与逐字草稿 SSE 订阅流；同一会话的快照由 phone_assist.history 镜像", "decision": ""},
@@ -27,5 +26,41 @@
     "ws:phone_use/response": {"kind": "transport", "reason": "Android Shell 在设备通道上回的 RPC 执行结果帧", "decision": ""},
     "ws:phone_use/state": {"kind": "transport", "reason": "Android Shell 在设备通道上主动上报的显示/画中画状态帧", "decision": ""}
   },
-  "agent_only": {}
+  "agent_only": {
+    "file_viewer.open": {"reason": "用户在文件标签里点开文件、翻页、跳行是纯前端动作，没有后端入口；这是 self 对同一个标签视图的打开与定位，标签经 live 通道回报的视图由 file_viewer.state 镜像"},
+    "file_viewer.close": {"reason": "用户点「返回目录」是纯前端动作，没有后端入口；这是 self 让同一个标签回到目录"}
+  },
+  "model_tools": {
+    "tool:akasha/f'{action}_memory'": {"reason": "记住或遗忘本轮用户明确确认的内容，依赖调用所在消息作为出处"},
+    "tool:akasha/fetch_messages": {"reason": "按召回结果给出的 ref 读回消息原文进模型上下文，属于召回链的一环"},
+    "tool:akasha/recall_memory": {"reason": "模型主动召回历史对话；用户侧的召回浮层由 akasha.recall.turn 镜像"},
+    "tool:computer/computer": {"reason": "模型逐步操作浏览器的执行器，按调用上下文绑定会话的浏览器租约；打开、导航、显示等界面动作由 computer.* operation 镜像"},
+    "tool:design/design_show_html": {"reason": "把模型生成的 HTML 导入为设计文档，依赖调用所在会话的工作目录；设计文档的增改读由 design.* operation 镜像"},
+    "tool:design/f'design_{spec.name}'": {"reason": "模型编辑画布的细粒度工具组，依赖调用上下文定位文档与修订；设计文档的增改读由 design.* operation 镜像"},
+    "tool:file_viewer/open_document": {"reason": "与 file_viewer.open 共用 Navigator；工具形式带出调用所在轮次，工作台按轮次决定是否自动展开"},
+    "tool:goal/CREATE_GOAL_TOOL": {"reason": "模型按用户要求为当前会话建目标，依赖调用所在会话；用户侧由 goal.set 镜像"},
+    "tool:goal/GET_GOAL_TOOL": {"reason": "模型读当前会话目标，依赖调用所在会话；用户侧由 goal.show 镜像"},
+    "tool:goal/UPDATE_GOAL_TOOL": {"reason": "模型按验证结果更新目标状态，依赖调用所在会话；用户侧由 goal.pause/resume/clear 镜像"},
+    "tool:message_push/agent_restart": {"reason": "在本轮最终回复送达后重启，依赖调用所在轮次的回复时序"},
+    "tool:message_push/message_push": {"reason": "模型向渠道主动发消息或文件，走工具授权；用户发消息走各渠道本身"},
+    "tool:phone_use/device_subscribe": {"reason": "手机端侧事件订阅规则的增删改，走工具授权；用户在手机上没有对应的网页入口"},
+    "tool:phone_use/phone_action": {"reason": "模型在手机后台虚拟屏上逐步操作的执行器；用户直接操作自己的手机"},
+    "tool:phone_use/phone_devices": {"reason": "模型查看已连接设备与虚拟屏状态；同一状态由 phone_use.devices 镜像"},
+    "tool:phone_use/phone_events": {"reason": "模型查询手机端侧事件流进上下文；用户在手机上直接看到这些事件"},
+    "tool:phone_use/phone_file": {"reason": "服务器与手机之间传文件的执行器，走工具授权"},
+    "tool:phone_use/phone_observe": {"reason": "模型观察手机虚拟屏界面树的执行器；用户直接看自己的手机"},
+    "tool:phone_use/phone_shell": {"reason": "在手机上以 UID 2000 执行命令的执行器，走工具授权"},
+    "tool:scheduler/'schedule' if action == 'schedule' else 'cancel_schedule'": {"reason": "模型为当前会话建立或取消定时任务，依赖调用所在会话作为投递目标"},
+    "tool:scheduler/list_schedules": {"reason": "模型查看当前会话的定时任务，依赖调用所在会话"},
+    "tool:standard_web/name": {"reason": "网页搜索与抓取，结果进模型上下文；界面上没有对应动作"},
+    "tool:subagent/'delegate_' + runner.name": {"reason": "把任务交给外部代理运行器，依赖调用所在会话作为父会话；运行器管理由 subagent.runners.* 镜像"},
+    "tool:subagent/f'delegate_{runner.name}_result'": {"reason": "读回外部代理任务回执进模型上下文，依赖调用所在会话"},
+    "tool:subagent/spawn": {"reason": "创建子任务并继承父会话的工具授权与工作目录，只能作为工具调用；子任务查看与控制由 subagent.* operation 镜像"},
+    "tool:subagent/spawn_manage": {"reason": "模型列出或取消本会话树的子任务；用户侧由 subagent.subagent.cancel 与工作台操作镜像"},
+    "tool:subagent/subagent_read": {"reason": "模型读子任务进展，依赖调用所在会话树；用户侧由 subagent.subagent.read 镜像"},
+    "tool:subagent/subagent_send": {"reason": "模型给子任务插话或续跑，依赖调用所在会话树；用户侧由 subagent.subagent.send 镜像"},
+    "tool:userinformation/tool_name": {"reason": "用户资料各来源的只读查询，结果进模型上下文"},
+    "tool:vision/read_image_vision": {"reason": "主模型看不了图时转给看图模型，属于模型执行机制"},
+    "tool:visuals/render_visual": {"reason": "在对话里生成可交互附件，产物是本轮回复的一部分；用户在消息里直接打开附件"}
+  }
 }

@@ -72,6 +72,9 @@ html, body, #reader-root {
 .dr-btn.is-icon { width: 28px; padding: 0; }
 .dr-btn:disabled { opacity: 0.38; cursor: default; }
 
+/* hidden 属性必须生效：带 display 的类（.dr-btn、提示条）会盖住浏览器默认的 [hidden] 规则。 */
+.dr-shell [hidden] { display: none !important; }
+
 /* Agent 导览轻提示条 */
 .dr-note-banner {
   position: absolute;
@@ -418,6 +421,20 @@ html, body, #reader-root {
   -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--dr-float-shadow);
   max-width: calc(100% - 20px);
+}
+
+.dr-pill {
+  transition: opacity 220ms var(--dr-ease), translate 220ms var(--dr-ease);
+}
+
+.dr-shell.is-chrome-idle .dr-pill {
+  opacity: 0;
+  translate: 0 10px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dr-pill { transition: none; }
 }
 
 .dr-pill-sep {
