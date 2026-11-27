@@ -1,7 +1,7 @@
 import "./plugin-ui.css";
 import { useEffect, useMemo, useState } from "react";
 import {
-  render, type DestinationControls, type DestinationForm, type NavigationDestination, type NavigationDestinationsProvider,
+  render, type DestinationControls, type DestinationForm, type NavigationDestination, type NavigationDestinationView, type NavigationDestinationsProvider,
   type PluginUiDestinationContext, type PluginUiDestinationFormContext, type PluginUiHostContext,
 } from "@akashic/chat-ui-v1";
 
@@ -139,4 +139,17 @@ const destinations: NavigationDestinationsProvider = {
   }],
 };
 
-export default { slots: { "navigation.destinations": destinations } };
+const mainSessionView: NavigationDestinationView = {
+  renderContent: ({ destination, preview, statusNode }) => <span className="destination-row__copy" data-main-session-view="true">
+    <span className="destination-row__name">
+      <strong>{destination.label}</strong>
+      {statusNode}
+    </span>
+    {preview ? <span className="destination-row__preview">{preview}</span> : null}
+  </span>,
+};
+
+export default {
+  slots: { "navigation.destinations": destinations },
+  navigationViews: { destinations: mainSessionView },
+};

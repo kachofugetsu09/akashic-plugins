@@ -1,7 +1,7 @@
 import "./plugin-ui.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  GroupIconPicker, render, type NavigationForm, type NavigationGroup, type NavigationGroupsProvider, type PluginUiHostContext,
+  GroupIconPicker, render, type NavigationForm, type NavigationGroup, type NavigationGroupView, type NavigationGroupsProvider, type PluginUiHostContext,
   type PluginUiNavigationContext, type PluginUiNavigationFormContext, type ScopeFieldValues,
 } from "@akashic/chat-ui-v1";
 
@@ -353,4 +353,59 @@ const groups: NavigationGroupsProvider = {
   notice: { mount: mountWith((context: PluginUiNavigationContext) => <PendingProjects context={context} />) },
 };
 
-export default { slots: { "navigation.groups": groups } };
+const PROJECT_COLOR_TOKENS: Readonly<Record<string, string>> = {
+  pine: "var(--ak-chart-3)",
+  blue: "var(--ak-chart-1)",
+  ochre: "var(--ak-chart-2)",
+  plum: "var(--ak-chart-4)",
+  teal: "var(--ak-chart-6)",
+  cinnabar: "var(--ak-chart-5)",
+};
+
+function ProjectIconMark({ icon, color, size, trigger, iconProvider }: {
+  icon?: string;
+  color?: string;
+  size: number;
+  trigger: "hover" | "parent" | "none";
+  iconProvider?: Parameters<NonNullable<NavigationGroupView["renderLeading"]>>[0]["iconProvider"];
+}) {
+  const tint = color ? PROJECT_COLOR_TOKENS[color] : undefined;
+  const IconComp = iconProvider?.Icon;
+  return <span className="navigation-group__icon" style={tint ? { color: tint } : undefined} aria-hidden="true">
+    {IconComp
+      ? <IconComp name={icon || "folder"} size={size} trigger={trigger} />
+      : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+      </svg>}
+  </span>;
+}
+
+const projectGroupView: NavigationGroupView = {
+  renderLeading: ({ group, iconProvider }) => (
+    <ProjectIconMark icon={group.icon} color={group.color} size={18} trigger="parent" iconProvider={iconProvider} />
+  ),
+  renderHoverCard: ({ group, meta, hasActions, iconProvider }) => <div data-project-hover-card="true">
+    <div className="group-hover-card__head">
+      <span className="group-hover-card__icon">
+        <ProjectIconMark icon={group.icon} color={group.color} size={16} trigger="none" iconProvider={iconProvider} />
+      </span>
+      <strong className="group-hover-card__title">{group.label}</strong>
+    </div>
+    {meta.map((item, idx) => <div key={`${item.id}:${idx}`} className="group-hover-card__section">
+      <div className="group-hover-card__kicker">
+        <span className={`group-hover-card__dot group-hover-card__dot--${item.tone ?? "muted"}`} aria-hidden="true" />
+        <span className="group-hover-card__policy">{item.label}</span>
+      </div>
+      {item.description ? <p className="group-hover-card__desc">{item.description}</p> : null}
+    </div>)}
+    {group.detail ? <div className="group-hover-card__section group-hover-card__dir">
+      <code className="group-hover-card__path">{group.detail}</code>
+    </div> : null}
+    {hasActions ? <div className="group-hover-card__foot">右键或点行尾菜单查看更多操作</div> : null}
+  </div>,
+};
+
+export default {
+  slots: { "navigation.groups": groups },
+  navigationViews: { groups: projectGroupView },
+};
