@@ -1,0 +1,8 @@
+{
+  "name": "@akashic-plugins/workspace-changes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "highlight.js": "11.11.1"
+  }
+}
