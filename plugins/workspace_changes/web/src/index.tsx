@@ -134,7 +134,6 @@ class ChangesTab {
     split.append(side, this.pane);
     this.note.hidden = true;
     this.root.append(bar, this.note, split);
-    this.root.addEventListener("keydown", (event) => this.onKey(event));
   }
 
   setSession(session: string | null): void {
@@ -428,19 +427,6 @@ class ChangesTab {
     field.focus();
   }
 
-  // j / k 切到下一个、上一个文件（按左栏的顺序）；在输入框里不接。
-  private onKey(event: KeyboardEvent): void {
-    if (event.ctrlKey || event.metaKey || event.altKey || (event.key !== "j" && event.key !== "k")) return;
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
-    const query = this.filter.value.trim().toLowerCase();
-    const order = byDirectory((this.result?.files ?? []).filter((file) => file.path.toLowerCase().includes(query))).flatMap(([, items]) => items);
-    if (!order.length) return;
-    const at = order.findIndex((file) => file.path === this.selected);
-    const next = order[Math.min(order.length - 1, Math.max(0, at + (event.key === "j" ? 1 : -1)))];
-    event.preventDefault();
-    this.select(next.path, true);
-  }
-
   private showNote(text: string): void {
     this.note.textContent = text;
     this.note.hidden = false;
@@ -494,7 +480,7 @@ function renderChanges(ctx: WebHostContextV1, host: HTMLElement, rawView: unknow
 
 export function activate(ctx: WebHostContextV1): WebUiDisposer {
   return ctx.ui.inject("conversation.tools.v2", (mount) => mount.register({
-    id: "workspace-changes", label: "改动", order: 30, hint: "工作目录相对 git 的改动", shortcut: "Mod+Shift+G", accepts: [OPEN_INTENT, FILE_INTENT],
+    id: "workspace-changes", label: "改动", order: 30, hint: "工作目录相对 git 的改动", accepts: [OPEN_INTENT, FILE_INTENT],
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v12M18 9v12M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM18 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM6 15c0-4 12-2 12-6"/></svg>',
     render(host, _entryView, props) { return renderChanges(ctx, host, props); },
   }));

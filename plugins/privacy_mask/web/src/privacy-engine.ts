@@ -57,12 +57,6 @@ function saveState(state: PrivacyMaskState): void {
   }
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  return Boolean(target.closest("textarea, input, select, [contenteditable='true']"));
-}
-
 interface SavedTooltip {
   title?: string;
   tip?: string;
@@ -227,19 +221,6 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
     });
   }
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing || event.defaultPrevented) return;
-    if (event.code !== "KeyM") return;
-    // 1. Ctrl+Shift+M / ⌘+Shift+M：在任何位置（含输入框内）均可一键切换打码。
-    const modShiftM = (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey;
-    // 2. Alt+M：仅在非可编辑目标时触发，避免吞掉 macOS 输入框内 Option+M（µ）等字符输入。
-    const altM = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !isEditableTarget(event.target);
-    if (modShiftM || altM) {
-      event.preventDefault();
-      engine.toggle();
-    }
-  };
-
   const onStorage = (event: StorageEvent) => {
     if (event.key !== null && event.key !== STORAGE_KEY) return;
     state = loadState();
@@ -247,7 +228,6 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
     notify();
   };
 
-  window.addEventListener("keydown", onKeyDown);
   window.addEventListener("storage", onStorage);
 
   const engine: InternalEngine = {
@@ -290,7 +270,6 @@ export function acquirePrivacyMaskEngine(): PrivacyMaskEngine {
       if (engine.refs > 0) return;
       if (scanFrame) window.cancelAnimationFrame(scanFrame);
       observer.disconnect();
-      window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("storage", onStorage);
       restoreAllTooltips();
       for (const el of barred) el.style.removeProperty("--privacy-bar-width");

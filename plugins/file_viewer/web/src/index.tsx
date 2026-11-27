@@ -2279,7 +2279,6 @@ export function activate(ctx: WebHostContextV1): WebUiDisposer {
       label: "文件",
       order: 25,
       icon: FOLDER_ICON,
-      shortcut: "Mod+Shift+E",
       hint: "浏览服务端工作区、会话目录或指定路径文件",
       render(host, _entry, raw) {
         const root = createRoot(host);
