@@ -145,13 +145,8 @@ def _status(ctx: Context) -> StatusReader:
 
 async def register_settings(ctx: Context) -> object:
     uses = {field.name: field.use for field in FORM.fields if field.use is not None}
-    options, status = model_options(ctx, uses), _status(ctx)
-
-    # 表单底部的开关状态跟随 watch_enabled，而不是插件本身是否启用。
-    async def merged() -> Mapping[str, object]:
-        return {**await options(), **await status()}
-
-    settings = WatchSettings(ctx, Config, tuple(field.name for field in FORM.fields), status=merged)
+    # 表单的 enabled 表示插件可编辑；watch_enabled 是表单里的一个字段，不能混进来，否则关着时整张表单不可操作。
+    settings = WatchSettings(ctx, Config, tuple(field.name for field in FORM.fields), status=model_options(ctx, uses))
     return await ctx.require(SETTINGS_FORMS).register(ctx, FORM, settings)
 
 

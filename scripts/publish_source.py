@@ -33,16 +33,14 @@ def _git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> str:
     return done.stdout.strip()
 
 
-# 插件目录里 git 跟踪的文件（子模块就是它自己仓库跟踪的文件）；不在 git 里的目录退回全部文件。
+# 插件目录里 git 跟踪的文件（子模块就是它自己仓库跟踪的文件）。只发布跟踪的文件：
+# 未 git add 的目录里可能有 .env 之类的秘密，宁可拒绝也不退回打包整个目录。
 def _tracked(directory: Path) -> list[str]:
-    try:
-        listed = _git("ls-files", "-z", cwd=directory)
-    except subprocess.CalledProcessError:
-        listed = ""
-    if listed:
-        return [item for item in listed.split("\0") if item]
-    return [str(path.relative_to(directory)) for path in directory.rglob("*")
-            if path.is_file() and ".git" not in path.relative_to(directory).parts]
+    listed = _git("ls-files", "-z", cwd=directory)
+    files = [item for item in listed.split("\0") if item]
+    if not files:
+        raise SystemExit(f"{directory} 里没有 git 跟踪的文件：先 git add 并提交，再发布")
+    return files
 
 
 # 把一个插件目录写成裸仓库里的一棵 tree：用临时 index，不碰插件仓库自己的 index。

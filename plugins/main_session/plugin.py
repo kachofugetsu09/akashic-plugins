@@ -197,7 +197,8 @@ class _Current:
 
     def current(self) -> str | None:
         state, session_id = self._pointer.read()
-        return session_id if state == "set" else None
+        # 和侧栏一致：已删除或不是 Web 对话的指向不算有主对话。
+        return session_id if state == "set" and session_id is not None and self._pointer.usable(session_id) else None
 
 
 async def apply(ctx: Context) -> None:
