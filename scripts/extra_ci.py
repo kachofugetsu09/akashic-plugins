@@ -21,8 +21,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from extra_index import build_index  # noqa: E402
-# 与 Core 相同的相对布局：这些目录里的内容覆盖到 Core 检出的同名位置。
-OVERLAY_DIRS = ("plugins", "frontend/plugins", "tests")
+# 与 Core 相同的相对布局：业务插件前端已随插件归属在 plugins/<name>/web/ 下。
+OVERLAY_DIRS = ("plugins", "tests")
 EXTRA_TIERS_FILE = "extra_tiers.toml"
 # 用户界面入口与 Agent operation 一对一门禁的 extra 清单；合成树里与 Core 清单合并检查。
 PARITY_FILE = "interaction_parity.extra.json"
@@ -51,13 +51,14 @@ def compose(core: Path, ref: str, out: Path) -> None:
     archive = subprocess.run(["git", "archive", "--format=tar", ref], cwd=core, check=True, stdout=subprocess.PIPE).stdout
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as stream:
         stream.extractall(out, filter="data")
-    # 2. 覆盖：同名插件整目录替换，保证 Core 里的旧副本不会混进来。
+    # 2. 覆盖：同名插件整目录替换，保证 Core 里的旧副本不会混进来；显式忽略本地 node_modules 与 .generated。
+    ignore = shutil.ignore_patterns("node_modules", ".generated", ".build-staging")
     for name in plugin_names():
         for base in OVERLAY_DIRS:
             source, target = ROOT / base / name, out / base / name
             if source.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
-                shutil.copytree(source, target)
+                shutil.copytree(source, target, ignore=ignore)
     # 3. 层级声明文件（如有）放到合成树根目录，边界门禁自动读取。
     for name in (EXTRA_TIERS_FILE, PARITY_FILE):
         if (ROOT / name).is_file():
@@ -191,8 +192,28 @@ def build(core: Path, synth: Path, bare: Path, remote: str | None, plan: Path) -
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
 
+def _discover_plugin_tsconfigs(synth: Path) -> list[Path]:
+    found: list[Path] = []
+    for base, sub in ((synth / "plugins", "web"), (synth / "frontend" / "plugins", "")):
+        if not base.is_dir():
+            continue
+        for entry in sorted(base.iterdir()):
+            if not entry.is_dir():
+                continue
+            container = entry / sub if sub else entry
+            if not container.is_dir():
+                continue
+            for child in sorted(container.iterdir()):
+                if not child.is_dir() or child.name == "node_modules" or child.name.startswith("."):
+                    continue
+                cfg = child / "tsconfig.json"
+                if cfg.is_file():
+                    found.append(cfg)
+    return found
+
+
 # 为 tsgo（TypeScript 7）生成兼容配置：移除已废弃的 baseUrl、补齐相对 paths、关闭副作用导入检查。
-def _prepare_tsgo_configs(synth: Path) -> tuple[Path, Path]:
+def _prepare_tsgo_configs(synth: Path) -> list[Path]:
     main_src = synth / "tsconfig.json"
     main_cfg = json.loads(main_src.read_text(encoding="utf-8"))
     co = main_cfg.setdefault("compilerOptions", {})
@@ -206,15 +227,18 @@ def _prepare_tsgo_configs(synth: Path) -> tuple[Path, Path]:
     main_out = synth / ".tsconfig.tsgo.json"
     main_out.write_text(json.dumps(main_cfg, indent=2) + "\n", encoding="utf-8")
 
-    design_src = synth / "frontend/plugins/design/editor/tsconfig.json"
-    design_cfg = json.loads(design_src.read_text(encoding="utf-8"))
-    design_cfg["extends"] = "../../../../.tsconfig.tsgo.json"
-    dco = design_cfg.setdefault("compilerOptions", {})
-    dco.pop("baseUrl", None)
-    dco["noUncheckedSideEffectImports"] = False
-    design_out = design_src.parent / ".tsconfig.tsgo.json"
-    design_out.write_text(json.dumps(design_cfg, indent=2) + "\n", encoding="utf-8")
-    return main_out, design_out
+    configs = [main_out]
+    for sub_src in _discover_plugin_tsconfigs(synth):
+        sub_cfg = json.loads(sub_src.read_text(encoding="utf-8"))
+        rel_main = Path(os.path.relpath(main_out, sub_src.parent)).as_posix()
+        sub_cfg["extends"] = rel_main if rel_main.startswith(".") else f"./{rel_main}"
+        sco = sub_cfg.setdefault("compilerOptions", {})
+        sco.pop("baseUrl", None)
+        sco["noUncheckedSideEffectImports"] = False
+        sub_out = sub_src.parent / ".tsconfig.tsgo.json"
+        sub_out.write_text(json.dumps(sub_cfg, indent=2) + "\n", encoding="utf-8")
+        configs.append(sub_out)
+    return configs
 
 
 # 并发执行 CI 检查与 release 分支构建；scope 支持 all / python / web。
@@ -273,15 +297,12 @@ def verify(
 
         tsgo = shutil.which("tsgo")
         if tsgo:
-            ts_main, ts_design = _prepare_tsgo_configs(synth)
-            frontend_typecheck_cmds = [
-                [tsgo, "--noEmit", "-p", str(ts_main)],
-                [tsgo, "--noEmit", "-p", str(ts_design)],
-            ]
+            tsgo_configs = _prepare_tsgo_configs(synth)
+            frontend_typecheck_cmds = [[tsgo, "--noEmit", "-p", str(cfg)] for cfg in tsgo_configs]
         else:
             frontend_typecheck_cmds = [
                 ["npx", "--no-install", "tsc", "--noEmit"],
-                ["npx", "--no-install", "tsc", "--noEmit", "-p", "frontend/plugins/design/editor/tsconfig.json"],
+                ["node", "scripts/typecheck-plugin-projects.mjs"],
             ]
         tasks.append(("Build release branches", [build_cmd], ROOT))
         tasks.append(("Check frontend", [
