@@ -313,8 +313,7 @@ class TerminalInstance implements PaneHost {
     this.notice.hidden = false;
   }
 
-  // 4. 快捷键与 kitty 一致：Ctrl+Shift+C/V 复制粘贴，T 新开终端，F 搜索，←/→ 切到相邻标签。
-  //    普通浏览器标签页里 Ctrl+Shift+T 被浏览器保留（恢复关闭的标签页），只在 PWA / 桌面壳里到得了页面。
+  // 4. 终端里 Ctrl+C 留给程序中断，复制粘贴用 Ctrl+Shift+C/V；Ctrl+Shift+F 打开终端内查找（与全局 Ctrl/⌘+F 同义）。
   shortcut(pane: Pane, event: KeyboardEvent): boolean {
     switch (event.code) {
       case "KeyC":
@@ -323,17 +322,10 @@ class TerminalInstance implements PaneHost {
         return true;
       case "KeyV":
         return true;
-      case "KeyT":
-        event.preventDefault();
-        this.view.openNew();
-        return true;
       case "KeyF":
         event.preventDefault();
         this.openSearch();
         return true;
-      case "ArrowLeft":
-      case "ArrowRight":
-        return this.view.cycle(event.code === "ArrowLeft" ? -1 : 1);
       default:
         return false;
     }
@@ -416,7 +408,7 @@ function renderTerminal(ctx: WebHostContextV1, host: HTMLElement, rawView: unkno
 
 export function activate(ctx: WebHostContextV1): WebUiDisposer {
   return ctx.ui.inject("conversation.tools.v2", (mount) => mount.register({
-    id: "terminal", label: "终端", order: 20, hint: "在会话的工作目录里", shortcut: "Ctrl+`", multiple: true,
+    id: "terminal", label: "终端", order: 20, hint: "在会话的工作目录里", multiple: true,
     icon: '<svg viewBox="0 0 16 16" fill="none" data-icon="fill" aria-hidden="true"><path d="M11 8.975C11.29 8.975 11.525 9.211 11.525 9.5C11.525 9.79 11.29 10.026 11 10.026H8.667C8.377 10.026 8.142 9.79 8.142 9.5C8.142 9.211 8.377 8.975 8.667 8.975H11Z" fill="currentColor"/><path d="M4.795 6.129C5 5.924 5.332 5.924 5.537 6.129L6.919 7.511C7.189 7.781 7.189 8.22 6.919 8.49L5.537 9.872C5.332 10.076 5 10.076 4.795 9.872C4.59 9.667 4.59 9.334 4.795 9.129L5.924 8L4.795 6.872C4.59 6.667 4.59 6.334 4.795 6.129Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M11.107 1.808C11.483 1.808 11.732 1.807 11.949 1.841C13.087 2.022 13.978 2.914 14.158 4.051C14.193 4.268 14.191 4.517 14.191 4.893V11.107C14.191 11.483 14.193 11.733 14.158 11.95C13.978 13.087 13.086 13.978 11.949 14.159C11.732 14.193 11.483 14.192 11.107 14.192H4.893C4.517 14.192 4.268 14.193 4.051 14.159C2.913 13.979 2.021 13.087 1.841 11.95C1.806 11.733 1.808 11.483 1.808 11.107V4.893C1.808 4.517 1.807 4.268 1.841 4.051C2.021 2.914 2.913 2.021 4.051 1.841C4.268 1.807 4.517 1.808 4.893 1.808H11.107ZM4.893 2.859C4.477 2.859 4.33 2.86 4.215 2.878C3.527 2.987 2.987 3.527 2.878 4.215C2.86 4.33 2.858 4.477 2.858 4.893V11.107C2.858 11.523 2.86 11.67 2.878 11.785C2.987 12.473 3.527 13.013 4.215 13.122C4.33 13.14 4.477 13.142 4.893 13.142H11.107C11.522 13.142 11.67 13.14 11.784 13.122C12.472 13.013 13.012 12.473 13.121 11.785C13.139 11.67 13.142 11.523 13.142 11.107V4.893C13.142 4.477 13.139 4.33 13.121 4.215C13.012 3.527 12.472 2.987 11.784 2.878C11.67 2.86 11.522 2.859 11.107 2.859H4.893Z" fill="currentColor"/></svg>',
     render(host, _entryView, props) { return renderTerminal(ctx, host, props); },
   }));

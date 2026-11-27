@@ -34,7 +34,7 @@ function PrivacyMaskControl({ engine }: { engine: PrivacyMaskEngine }) {
   }, [open]);
 
   const activeLabel = snapshot.enabled ? "已打码" : "截屏打码";
-  // 未开启时顶栏不常驻：开关在侧栏底栏与 Alt+M；开启后才显示状态与关闭入口。
+  // 未开启时顶栏不常驻：开关在侧栏底栏；开启后才显示状态与关闭入口。
   if (!snapshot.enabled && !open && !lingering) return null;
 
   const statusText = snapshot.enabled
@@ -43,7 +43,7 @@ function PrivacyMaskControl({ engine }: { engine: PrivacyMaskEngine }) {
       : snapshot.redactTitles
         ? "已打码导航与标题"
         : "已模糊全部对话内容"
-    : "按 Alt+M 一键打码";
+    : "未开启";
 
   return (
     <div className="header-marker privacy-mask-marker" ref={rootRef} data-privacy-ui="true">
@@ -53,8 +53,8 @@ function PrivacyMaskControl({ engine }: { engine: PrivacyMaskEngine }) {
         className="header-marker__trigger"
         data-active={snapshot.enabled || undefined}
         aria-expanded={open}
-        aria-label={`截屏隐私打码：${snapshot.enabled ? "已开启" : "未开启"}（Alt+M）`}
-        title="截屏隐私打码（Alt+M）"
+        aria-label={`截屏隐私打码：${snapshot.enabled ? "已开启" : "未开启"}`}
+        title="截屏隐私打码"
         onClick={() => setOpen((value) => !value)}
         onBlur={() => setLingering(false)}
       >
@@ -69,12 +69,10 @@ function PrivacyMaskControl({ engine }: { engine: PrivacyMaskEngine }) {
           className="header-marker__panel privacy-mask-panel"
           role="group"
           aria-label="截屏隐私打码"
-          data-escape-layer=""
           data-privacy-ui="true"
         >
           <div className="privacy-mask-panel__head">
             <span className="privacy-mask-panel__title">截屏隐私打码</span>
-            <kbd className="privacy-mask-panel__kbd">Alt+M</kbd>
           </div>
 
           <div className="privacy-mask-panel__list">
