@@ -129,6 +129,9 @@ function loadCatalog(): Promise<ParsedCatalog> {
         })),
         allIcons: entries,
       };
+    }).catch((err) => {
+      catalogPromise = null;
+      throw err;
     });
   }
   return catalogPromise;
