@@ -1,5 +1,5 @@
 {
-  "name": "@akashic-plugins/privacy-mask",
+  "name": "@akashic-plugins/screenshot",
   "private": true,
   "type": "module",
   "dependencies": {
