@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { KubaiIcon } from "kubai-icons-react";
 import folderIcon from "kubai-icons/line/icons/folder";
 import type {
-  ChatPluginRuntimeContext, IconPickerViewProps, IconProvider, IconRenderProps, PluginUiDefinition,
+  ChatPluginRuntimeContext, IconPickerViewProps, IconProvider, IconRenderProps,
 } from "@akashic/chat-ui-v1";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore 由 build.mjs 在构建期生成，按官方 26 个分类拆分懒加载 chunk。
@@ -272,15 +272,7 @@ const provider: IconProvider = {
   Picker: KubaiLinePicker,
 };
 
-/** v3 浏览器微内核显式服务注册：通过 DI 直接向 ChatKernel 提供 icon.provider 能力。 */
+/** 纯 ChatKernel 微内核激活：直接向 DI 服务表注册 icon.provider 服务。 */
 export function activate(ctx: ChatPluginRuntimeContext): () => void {
   return ctx.services.provide("icon.provider", provider);
 }
-
-const definition: PluginUiDefinition = {
-  slots: {
-    "icon.provider": provider,
-  },
-};
-
-export default definition;

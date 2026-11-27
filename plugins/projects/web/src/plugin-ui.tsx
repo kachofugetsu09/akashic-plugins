@@ -1,8 +1,8 @@
 import "./plugin-ui.css";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ErrorInfo, type ReactNode } from "react";
 import {
-  GroupIconPicker, render,
-  type ChatPluginRuntimeContext, type ChatSlotHandle, type NavigationForm, type NavigationGroup, type NavigationGroupView,
+  render,
+  type ChatPluginRuntimeContext, type ChatSlotHandle, type IconProvider, type NavigationForm, type NavigationGroup, type NavigationGroupView,
   type NavigationGroupsProvider, type PluginUiHostContext, type PluginUiNavigationContext, type PluginUiNavigationFormContext,
   type ScopeFieldValues, type ScopeMetaItem, type ScopeMetaRecord,
 } from "@akashic/chat-ui-v1";
@@ -299,7 +299,111 @@ function PendingProjects({ context }: { context: PluginUiNavigationContext }) {
   </div>;
 }
 
-// 更换项目图标：复用宿主提供的 kubai-icons/line 全量分类选择器与纸面语义色板。
+const PROJECT_COLOR_OPTIONS: readonly { readonly id: string | null; readonly label: string; readonly cssValue: string }[] = [
+  { id: null, label: "墨色", cssValue: "var(--ak-ink-secondary)" },
+  { id: "pine", label: "松绿", cssValue: "var(--ak-chart-3)" },
+  { id: "blue", label: "靛蓝", cssValue: "var(--ak-chart-1)" },
+  { id: "ochre", label: "赭石", cssValue: "var(--ak-chart-2)" },
+  { id: "plum", label: "暮紫", cssValue: "var(--ak-chart-4)" },
+  { id: "teal", label: "青瓷", cssValue: "var(--ak-chart-6)" },
+  { id: "cinnabar", label: "朱砂", cssValue: "var(--ak-chart-5)" },
+];
+
+class IconPickerBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[projects] icon picker render failed", error, info);
+  }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
+/** 经 ChatKernel DI 服务表订阅首个可用图标服务（不绑定任何特定图标插件名）。 */
+function useKernelIconProvider(): IconProvider | null {
+  const runtime = activeHoverRuntime;
+  return useSyncExternalStore(
+    (onChange) => runtime ? runtime.services.subscribe("icon.provider", onChange) : () => {},
+    () => runtime ? runtime.services.get<IconProvider>("icon.provider") : null,
+    () => null,
+  );
+}
+
+/** 自包含的项目图标与纸面语义色板选择器：通过 ChatKernel DI 消费任意已注册的 icon.provider 服务。 */
+function ProjectIconPicker({ value, onChange, color = null, onColorChange, disabled = false }: {
+  value: string | null;
+  onChange: (icon: string | null) => void;
+  color?: string | null;
+  onColorChange?: (color: string | null) => void;
+  disabled?: boolean;
+}) {
+  const iconProvider = useKernelIconProvider();
+  const Picker = iconProvider?.Picker;
+  const cssColor = color ? PROJECT_COLOR_TOKENS[color] : undefined;
+
+  const fallbackPicker = <div className="projects-icon-picker__fallback">
+    <label className="projects-icon-picker__input-row">
+      <span>图标标识</span>
+      <input
+        type="text"
+        value={value ?? ""}
+        disabled={disabled}
+        placeholder="留空为默认文件夹"
+        onChange={(e) => {
+          const next = e.target.value.trim();
+          onChange(next || null);
+        }}
+      />
+    </label>
+    <p className="projects-icon-picker__hint">安装图标库插件后可按分类浏览全部图标。</p>
+  </div>;
+
+  return <div className="projects-icon-picker">
+    <div className="projects-icon-picker__summary">
+      <span className="projects-icon-picker__preview" data-kubai-trigger="">
+        <ProjectIconMark icon={value ?? undefined} color={color ?? undefined} size={22} trigger="parent" iconProvider={iconProvider} />
+      </span>
+      <span className="projects-icon-picker__meta">
+        <strong>{value || "folder"}</strong>
+        <small>{iconProvider ? `${iconProvider.label} · 悬停可预览动效` : "未安装图标扩展，使用默认文件夹"}</small>
+      </span>
+      {(value || color) ? <button
+        type="button"
+        className="projects-icon-picker__reset"
+        disabled={disabled}
+        onClick={() => { onChange(null); onColorChange?.(null); }}
+      >
+        恢复默认
+      </button> : null}
+    </div>
+    {onColorChange ? <div className="projects-icon-picker__swatches" role="radiogroup" aria-label="选择图标颜色">
+      {PROJECT_COLOR_OPTIONS.map((opt) => {
+        const selected = (color ?? null) === opt.id;
+        return <button
+          key={opt.id ?? "default"}
+          type="button"
+          role="radio"
+          aria-checked={selected}
+          aria-label={opt.label}
+          title={opt.label}
+          disabled={disabled}
+          className="projects-icon-picker__swatch"
+          onClick={() => onColorChange(opt.id)}
+        >
+          <span className="projects-icon-picker__swatch-dot" style={{ background: opt.cssValue }} />
+        </button>;
+      })}
+    </div> : null}
+    <div className="projects-icon-picker__body" style={cssColor ? { color: cssColor } : undefined}>
+      {Picker ? <IconPickerBoundary key={iconProvider.id} fallback={fallbackPicker}>
+        <Suspense fallback={<p className="projects-icon-picker__hint">正在加载图标选择器…</p>}>
+          <Picker value={value} onChange={onChange} disabled={disabled} />
+        </Suspense>
+      </IconPickerBoundary> : fallbackPicker}
+    </div>
+  </div>;
+}
+
+// 更换项目图标：由 projects 插件自包含色板与预览，通过 ChatKernel DI 消费已注册图标服务。
 function ChangeIcon({ context, group }: { context: PluginUiNavigationFormContext; group: NavigationGroup }) {
   const [icon, setIcon] = useState<string | null>(group.icon ?? null);
   const [color, setColor] = useState<string | null>(group.color ?? null);
@@ -315,7 +419,7 @@ function ChangeIcon({ context, group }: { context: PluginUiNavigationFormContext
   }), [context, group.id]);
   useEffect(() => context.form.setReady(true), [context]);
   return <div className="projects-ui-form">
-    <GroupIconPicker value={icon} color={color} disabled={busy} onChange={setIcon} onColorChange={setColor} />
+    <ProjectIconPicker value={icon} color={color} disabled={busy} onChange={setIcon} onColorChange={setColor} />
   </div>;
 }
 
@@ -373,7 +477,7 @@ function ProjectIconMark({ icon, color, size, trigger, iconProvider }: {
 }) {
   const tint = color ? PROJECT_COLOR_TOKENS[color] : undefined;
   const IconComp = iconProvider?.Icon;
-  return <span className="navigation-group__icon" style={tint ? { color: tint } : undefined} aria-hidden="true">
+  return <span className="navigation-group__icon" data-kubai-trigger="" style={tint ? { color: tint } : undefined} aria-hidden="true">
     {IconComp
       ? <IconComp name={icon || "folder"} size={size} trigger={trigger} />
       : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -389,6 +493,7 @@ interface ProjectHoverSectionProps {
 
 interface KernelHoverRuntime {
   readonly handle: ChatSlotHandle;
+  readonly services: ChatPluginRuntimeContext["services"];
   readonly Outlet: ChatPluginRuntimeContext["Outlet"];
   readonly useSlotEntries: ChatPluginRuntimeContext["useSlotEntries"];
 }
@@ -396,13 +501,14 @@ interface KernelHoverRuntime {
 let activeHoverRuntime: KernelHoverRuntime | null = null;
 
 /**
- * v3 微内核激活：由 projects 自己声明自有命名空间子槽 "projects.hover_card.sections"，
+ * ChatKernel 微内核激活：声明自有命名空间子槽 "projects.hover_card.sections"，
  * 任何外部插件（如 akasha）可直接向该子槽贡献项目浮卡扩展块，Core 零知情、零白名单。
  */
 export function activate(ctx: ChatPluginRuntimeContext): void {
   const handle = ctx.slots.declare("projects.hover_card.sections");
   const runtime: KernelHoverRuntime = {
     handle,
+    services: ctx.services,
     Outlet: ctx.Outlet,
     useSlotEntries: ctx.useSlotEntries,
   };

@@ -11,7 +11,6 @@ from core.common.file_io import run_file_io
 from plugins.working_directory.contract import WORKING_DIRECTORY
 from .operations import ProjectCreation
 
-import dataclasses
 from agent.plugin_composition import Context
 from plugins.ui.contract import UI_SLOTS, PluginUiDefinition, PluginUiRpcInvalidRequest
 from plugins.ledger.contract import (
@@ -288,9 +287,8 @@ async def apply(ctx: Context) -> None:
         )
 
     await creation.register_operations(query)
-    ui_def = (
-        PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("navigation.groups",), client_kernel=True)
-        if any(f.name == "client_kernel" for f in dataclasses.fields(PluginUiDefinition))
-        else PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("navigation.groups",))
+    _ = await ctx.require(UI_SLOTS).register_plugin_ui(
+        ctx,
+        PluginUiDefinition(module="plugin_ui.js", stylesheet="plugin_ui.css", slots=("navigation.groups",), client_kernel=True),
+        query=query,
     )
-    _ = await ctx.require(UI_SLOTS).register_plugin_ui(ctx, ui_def, query=query)
